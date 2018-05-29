@@ -22,12 +22,12 @@ class TemperaturePressureService : Service() {
     private lateinit var mTemperatureSensorDriver: Bmx280SensorDriver
 
     override fun onCreate() {
-        setupTemperaturePressureSensor()
+        //setupTemperaturePressureSensor()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        destroyTemperaturePressureSensor()
+        //destroyTemperaturePressureSensor()
     }
 
     override fun onBind(intent: Intent): IBinder? {
