@@ -8,23 +8,6 @@ import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.*
 import java.io.IOException
 
-
-private val TAG = MainActivity::class.java.simpleName
-
-private const val SCAN_DURATION_MS = 60000L
-private val NAME_FILTER = arrayOf(
-        "SHTC1 smart gadget",
-        "SHTC1 smart gadget\u0002",
-        "Smart Humigadget",
-        "SensorTag"
-)
-private val UUID_FILTER = arrayOf(
-        SHT3xTemperatureService.SERVICE_UUID,
-        SHT3xHumidityService.SERVICE_UUID,
-        SHTC1TemperatureAndHumidityService.SERVICE_UUID,
-        SensorTagTemperatureAndHumidityService.SERVICE_UUID
-)
-
 class MainActivity : Activity() {
     private lateinit var gadgetManager: GadgetManager
     private val gadgetCallback = HedgebaseGadgetManagerCallback()
@@ -227,6 +210,8 @@ class MainActivity : Activity() {
     }
 }
 
+private val TAG = MainActivity::class.java.simpleName
+
 val i2cBus: String
     get() = when (Build.DEVICE) {
         DEVICE_RPI3 -> "I2C1"
@@ -238,15 +223,27 @@ val i2cBus: String
 private const val DEVICE_RPI3 = "rpi3"
 private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
 private const val DEVICE_IMX7D_PICO = "imx7d_pico"
+
 private const val UNIT_CELSIUS = "°C"
-
 private val Float.cToF: Float get() = this * 9 / 5 + 32
+private val GadgetDataPoint.fahrenheit: Float
+    get() =
+        if (temperatureUnit == UNIT_CELSIUS) {
+            temperature.cToF
+        } else {
+            temperature
+        }
 
-private val GadgetDataPoint.fahrenheit: Float get() {
-    if(temperatureUnit == UNIT_CELSIUS) {
-        return temperature.cToF
-    } else {
-        return temperature
-    }
-}
-
+private const val SCAN_DURATION_MS = 60000L
+private val NAME_FILTER = arrayOf(
+        "SHTC1 smart gadget",
+        "SHTC1 smart gadget\u0002",
+        "Smart Humigadget",
+        "SensorTag"
+)
+private val UUID_FILTER = arrayOf(
+        SHT3xTemperatureService.SERVICE_UUID,
+        SHT3xHumidityService.SERVICE_UUID,
+        SHTC1TemperatureAndHumidityService.SERVICE_UUID,
+        SensorTagTemperatureAndHumidityService.SERVICE_UUID
+)
