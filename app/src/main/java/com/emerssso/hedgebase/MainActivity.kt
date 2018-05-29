@@ -1,9 +1,12 @@
 package com.emerssso.hedgebase
 
 import android.app.Activity
+import android.os.Build
 import android.util.Log
+import com.google.android.things.contrib.driver.ht16k33.AlphanumericDisplay
 import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.*
+import java.io.IOException
 
 
 private val TAG = MainActivity::class.java.simpleName
@@ -27,15 +30,52 @@ class MainActivity : Activity() {
     private val gadgetCallback = HedgebaseGadgetManagerCallback()
     private var gadget: Gadget? = null
 
+    private var display: AlphanumericDisplay? = null
+
     override fun onStart() {
         super.onStart()
+
+        setupGadgetConnection()
+        setUpDisplay()
+    }
+
+    /**
+     * Initializes [GadgetManagerFactory] (BLE temperature sensor)
+     * with [gadgetCallback], so that when we're ready to search
+     * for gadgets, we can start right away.
+     */
+    private fun setupGadgetConnection() {
         gadgetManager = GadgetManagerFactory.create(gadgetCallback)
         gadgetManager.initialize(this)
     }
 
+    /**
+     * Connects an [AlphanumericDisplay], like that used by a Rainbow HAT
+     */
+    private fun setUpDisplay() = try {
+        display = AlphanumericDisplay(i2cBus).apply {
+            setEnabled(true)
+            clear()
+        }
+
+        Log.d(TAG, "Initialized I2C Display")
+    } catch (e: IOException) {
+        Log.e(TAG, "Error initializing display", e)
+        Log.d(TAG, "Display disabled")
+        display = null
+    }
+
     override fun onStop() {
         super.onStop()
-        //stopTemperaturePressureRequest()
+
+        tearDownGadgetConnection()
+        tearDownDisplay()
+    }
+
+    /**
+     * Destroy any existing connections to BLE devices
+     */
+    private fun tearDownGadgetConnection() {
         gadgetManager.stopGadgetDiscovery()
         gadgetManager.release(this)
 
@@ -44,18 +84,36 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun startScanning() {
-        Log.d(TAG, "Start scanning")
-        if (!gadgetManager.startGadgetDiscovery(SCAN_DURATION_MS, NAME_FILTER, UUID_FILTER)) {
-            // Failed with starting a scan
-            Log.e(TAG, "Could not start discovery")
+    /**
+     * Releases our hold on the [AlphanumericDisplay]
+     */
+    private fun tearDownDisplay() = display?.run {
+        try {
+            clear()
+            setEnabled(false)
+            close()
+        } catch (e: IOException) {
+            Log.e(TAG, "Error disabling display", e)
+        } finally {
+            display = null
+        }
+    }
+
+    private fun updateDisplay(value: Float) = display?.run {
+        try {
+            display(value.toDouble())
+        } catch (e: IOException) {
+            Log.e(TAG, "Error setting display", e)
         }
     }
 
     private inner class HedgebaseGadgetManagerCallback : GadgetManagerCallback {
         override fun onGadgetManagerInitialized() {
-            Log.d(TAG, "manager initialized")
-            startScanning()
+            Log.d(TAG, "manager initialized, start scanning")
+            if (!gadgetManager.startGadgetDiscovery(SCAN_DURATION_MS, NAME_FILTER, UUID_FILTER)) {
+                // Failed with starting a scan
+                Log.e(TAG, "Could not start discovery")
+            }
         }
 
         override fun onGadgetDiscoveryFinished() {
@@ -101,7 +159,9 @@ class MainActivity : Activity() {
 
         override fun onGadgetNewDataPoint(gadget: Gadget, service: GadgetService,
                                           dataPoint: GadgetDataPoint?) {
-            Log.d(TAG, "new data point: ${dataPoint?.temperature}")
+            Log.d(TAG, "new data point: " +
+                    "${dataPoint?.temperature}${dataPoint?.temperatureUnit}")
+            dataPoint?.run { updateDisplay(fahrenheit) }
         }
 
         override fun onSetGadgetLoggingEnabledFailed(gadget: Gadget,
@@ -164,6 +224,29 @@ class MainActivity : Activity() {
                 Log.d(TAG, "${value.value} ${value.unit} at ${value.timestamp}")
             }
         }
+    }
+}
+
+val i2cBus: String
+    get() = when (Build.DEVICE) {
+        DEVICE_RPI3 -> "I2C1"
+        DEVICE_IMX6UL_PICO -> "I2C2"
+        DEVICE_IMX7D_PICO -> "I2C1"
+        else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
+    }
+
+private const val DEVICE_RPI3 = "rpi3"
+private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
+private const val DEVICE_IMX7D_PICO = "imx7d_pico"
+private const val UNIT_CELSIUS = "°C"
+
+private val Float.cToF: Float get() = this * 9 / 5 + 32
+
+private val GadgetDataPoint.fahrenheit: Float get() {
+    if(temperatureUnit == UNIT_CELSIUS) {
+        return temperature.cToF
+    } else {
+        return temperature
     }
 }
 
