@@ -29,6 +29,7 @@ dependencies {
     implementation 'com.sensirion:libble:2.1.7'
     implementation 'com.sensirion:libsmartgadget:1.1.7'
     implementation 'com.google.android.things.contrib:driver-ht16k33:1.0'
+    implementation 'com.google.android.things.contrib:driver-pwmspeaker:1.0'
 
     compileOnly 'com.google.android.things:androidthings:1.0'
 

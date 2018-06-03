@@ -1,9 +1,14 @@
 package com.emerssso.hedgebase
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.os.Build
 import android.util.Log
+import android.view.animation.LinearInterpolator
 import com.google.android.things.contrib.driver.ht16k33.AlphanumericDisplay
+import com.google.android.things.contrib.driver.pwmspeaker.Speaker
 import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.*
 import java.io.IOException
@@ -14,12 +19,14 @@ class MainActivity : Activity() {
     private var gadget: Gadget? = null
 
     private var display: AlphanumericDisplay? = null
+    private var speaker: Speaker? = null
 
     override fun onStart() {
         super.onStart()
 
         setupGadgetConnection()
         setUpDisplay()
+        speaker = Speaker(speakerPwmPin)
     }
 
     /**
@@ -29,7 +36,7 @@ class MainActivity : Activity() {
      */
     private fun setupGadgetConnection() {
         gadgetManager = GadgetManagerFactory.create(gadgetCallback)
-        gadgetManager.initialize(this)
+        gadgetManager.initialize(applicationContext)
     }
 
     /**
@@ -53,6 +60,8 @@ class MainActivity : Activity() {
 
         tearDownGadgetConnection()
         tearDownDisplay()
+
+        speaker?.close()
     }
 
     /**
@@ -60,7 +69,7 @@ class MainActivity : Activity() {
      */
     private fun tearDownGadgetConnection() {
         gadgetManager.stopGadgetDiscovery()
-        gadgetManager.release(this)
+        gadgetManager.release(applicationContext)
 
         gadget?.run {
             disconnect()
@@ -90,6 +99,39 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun playConnectedSound() {
+        playSlide(440F, (440 * 4F))
+    }
+
+    private fun playSlide(start: Float, end: Float, repeat: Int = 1) {
+        val slide = ValueAnimator.ofFloat(start, end)
+        slide.duration = 150
+        slide.repeatCount = repeat
+        slide.interpolator = LinearInterpolator()
+        slide.addUpdateListener { animation ->
+            try {
+                val v = animation.animatedValue as Float
+                speaker?.play(v.toDouble())
+            } catch (e: IOException) {
+                throw RuntimeException("Error sliding speaker", e)
+            }
+        }
+        slide.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                try {
+                    speaker?.stop()
+                } catch (e: IOException) {
+                    throw RuntimeException("Error sliding speaker", e)
+                }
+            }
+        })
+        runOnUiThread({ slide.start() })
+    }
+
+    private fun playDisconnectedSound() {
+        playSlide(440F * 4, 440F)
+    }
+
     private inner class HedgebaseGadgetManagerCallback : GadgetManagerCallback {
         override fun onGadgetManagerInitialized() {
             Log.d(TAG, "manager initialized, start scanning")
@@ -110,8 +152,6 @@ class MainActivity : Activity() {
         override fun onGadgetDiscovered(newGadget: Gadget?, rssi: Int) {
             Log.d(TAG, "gadget $newGadget discovered")
 
-
-
             newGadget?.run {
                 if (connect()) {
                     Log.d(TAG, "connected to device $newGadget")
@@ -126,6 +166,7 @@ class MainActivity : Activity() {
                             }
 
                     gadget = this
+
                 } else {
                     Log.d(TAG, "unable to connect to device $newGadget")
                     Log.d(TAG, "unable to connect to device $newGadget")
@@ -149,7 +190,7 @@ class MainActivity : Activity() {
 
         override fun onSetGadgetLoggingEnabledFailed(gadget: Gadget,
                                                      service: GadgetDownloadService) {
-            Log.d(TAG, "onSetGadgetLoggingEnabled")
+            Log.d(TAG, "onSetGadgetLoggingEnabledFailed")
         }
 
         override fun onDownloadCompleted(gadget: Gadget, service: GadgetDownloadService) {
@@ -158,6 +199,11 @@ class MainActivity : Activity() {
 
         override fun onGadgetDisconnected(gadget: Gadget) {
             Log.d(TAG, "onGadgetDisconnected")
+
+            playDisconnectedSound()
+
+            tearDownGadgetConnection()
+            setupGadgetConnection()
         }
 
         override fun onSetLoggerIntervalFailed(gadget: Gadget, service: GadgetDownloadService) {
@@ -186,6 +232,7 @@ class MainActivity : Activity() {
                 Log.d(TAG, "subscribing to temp/humidity service")
                 subscribe()
 
+                playConnectedSound()
             } ?: Log.d(TAG, "Unable to find temp/humidity service")
         }
 
@@ -220,6 +267,8 @@ val i2cBus: String
         else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
     }
 
+
+
 private const val DEVICE_RPI3 = "rpi3"
 private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
 private const val DEVICE_IMX7D_PICO = "imx7d_pico"
@@ -233,6 +282,14 @@ private val GadgetDataPoint.fahrenheit: Float
         } else {
             temperature
         }
+
+val speakerPwmPin: String
+    get() = when (Build.DEVICE) {
+        DEVICE_RPI3 -> "PWM1"
+        DEVICE_IMX6UL_PICO -> "PWM8"
+        DEVICE_IMX7D_PICO -> "PWM2"
+        else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
+    }
 
 private const val SCAN_DURATION_MS = 60000L
 private val NAME_FILTER = arrayOf(
