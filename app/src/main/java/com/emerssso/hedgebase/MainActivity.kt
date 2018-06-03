@@ -11,15 +11,21 @@ import android.view.animation.LinearInterpolator
 import android.widget.TextView
 import com.google.android.things.contrib.driver.ht16k33.AlphanumericDisplay
 import com.google.android.things.contrib.driver.pwmspeaker.Speaker
-import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
+import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FirebaseFirestore
 import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.*
 import java.io.IOException
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+
 
 class MainActivity : Activity() {
     private lateinit var gadgetManager: GadgetManager
     private val gadgetCallback = HedgebaseGadgetManagerCallback()
+    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+
     private var gadget: Gadget? = null
 
     private var display: AlphanumericDisplay? = null
@@ -88,6 +94,8 @@ class MainActivity : Activity() {
         tearDownDisplay()
 
         speaker?.close()
+
+
     }
 
     /**
@@ -214,6 +222,8 @@ class MainActivity : Activity() {
 
     private inner class SHTC1GadgetListener : GadgetListener {
 
+        private var lastSavedTemp: Instant = Instant.MIN
+
         override fun onGadgetNewDataPoint(gadget: Gadget, service: GadgetService,
                                           dataPoint: GadgetDataPoint?) {
             Log.d(TAG, "new data point: " +
@@ -225,6 +235,22 @@ class MainActivity : Activity() {
                     playSlide(440F, 440F * 4, 50)
                 } else {
                     speaker?.stop()
+                }
+
+                val now = Instant.now()
+                if(lastSavedTemp.isBefore(now.minus(15L, ChronoUnit.MINUTES))) {
+                    Log.d(TAG, "Recording temperature $fahrenheit at $now")
+
+                    val data = mapOf(
+                            "temp" to fahrenheit,
+                            "time" to Timestamp(now.epochSecond, 0)
+                    )
+                    firestore.collection("temperatures")
+                            .add(data)
+
+                    firestore.document("temperatures/current").set(data)
+
+                    lastSavedTemp = now
                 }
             }
         }
@@ -315,8 +341,6 @@ val speakerPwmPin: String
         DEVICE_IMX7D_PICO -> "PWM2"
         else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
     }
-
-private const val RELAY_SWITCH_GPIO_PIN = "PWM0"
 
 private const val DEVICE_RPI3 = "rpi3"
 private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
