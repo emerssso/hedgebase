@@ -26,9 +26,8 @@ class MainActivity : Activity() {
 
         setupGadgetConnection()
         setUpDisplay()
-        speaker = Speaker(speakerPwmPin)
+        setUpSpeaker()
     }
-
     /**
      * Initializes [GadgetManagerFactory] (BLE temperature sensor)
      * with [gadgetCallback], so that when we're ready to search
@@ -53,6 +52,14 @@ class MainActivity : Activity() {
         Log.e(TAG, "Error initializing display", e)
         Log.d(TAG, "Display disabled")
         display = null
+    }
+
+    private fun setUpSpeaker() {
+        try {
+            speaker = Speaker(speakerPwmPin)
+        } catch (e: IOException) {
+            Log.w(TAG, "Unable to connect to speaker", e)
+        }
     }
 
     override fun onStop() {
@@ -185,7 +192,15 @@ class MainActivity : Activity() {
                                           dataPoint: GadgetDataPoint?) {
             Log.d(TAG, "new data point: " +
                     "${dataPoint?.temperature}${dataPoint?.temperatureUnit}")
-            dataPoint?.run { updateDisplay(fahrenheit) }
+            dataPoint?.run {
+                updateDisplay(fahrenheit)
+
+                if(fahrenheit < 70 || fahrenheit > 85) {
+                    playSlide(440F, 440F * 4, 50)
+                } else {
+                    speaker?.stop()
+                }
+            }
         }
 
         override fun onSetGadgetLoggingEnabledFailed(gadget: Gadget,
@@ -267,22 +282,6 @@ val i2cBus: String
         else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
     }
 
-
-
-private const val DEVICE_RPI3 = "rpi3"
-private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
-private const val DEVICE_IMX7D_PICO = "imx7d_pico"
-
-private const val UNIT_CELSIUS = "°C"
-private val Float.cToF: Float get() = this * 9 / 5 + 32
-private val GadgetDataPoint.fahrenheit: Float
-    get() =
-        if (temperatureUnit == UNIT_CELSIUS) {
-            temperature.cToF
-        } else {
-            temperature
-        }
-
 val speakerPwmPin: String
     get() = when (Build.DEVICE) {
         DEVICE_RPI3 -> "PWM1"
@@ -290,6 +289,21 @@ val speakerPwmPin: String
         DEVICE_IMX7D_PICO -> "PWM2"
         else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
     }
+
+private const val DEVICE_RPI3 = "rpi3"
+private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
+
+private const val DEVICE_IMX7D_PICO = "imx7d_pico"
+private const val UNIT_CELSIUS = "°C"
+private val Float.cToF: Float get() = this * 9 / 5 + 32
+
+private val GadgetDataPoint.fahrenheit: Float
+    get() =
+        if (temperatureUnit == UNIT_CELSIUS) {
+            temperature.cToF
+        } else {
+            temperature
+        }
 
 private const val SCAN_DURATION_MS = 60000L
 private val NAME_FILTER = arrayOf(
