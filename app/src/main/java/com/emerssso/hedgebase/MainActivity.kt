@@ -5,10 +5,14 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.app.Activity
 import android.os.Build
+import android.os.Bundle
 import android.util.Log
 import android.view.animation.LinearInterpolator
+import android.widget.TextView
 import com.google.android.things.contrib.driver.ht16k33.AlphanumericDisplay
 import com.google.android.things.contrib.driver.pwmspeaker.Speaker
+import com.google.android.things.pio.Gpio
+import com.google.android.things.pio.PeripheralManager
 import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.*
 import java.io.IOException
@@ -21,13 +25,28 @@ class MainActivity : Activity() {
     private var display: AlphanumericDisplay? = null
     private var speaker: Speaker? = null
 
+    private lateinit var text: TextView
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        setContentView(R.layout.activity_main)
+        text = findViewById(R.id.textView)
+    }
+
     override fun onStart() {
         super.onStart()
 
         setupGadgetConnection()
         setUpDisplay()
         setUpSpeaker()
+        val instance = PeripheralManager.getInstance()
+
+        for(i in instance.gpioList) {
+            Log.d(TAG, "gpio: $i")
+        }
     }
+
     /**
      * Initializes [GadgetManagerFactory] (BLE temperature sensor)
      * with [gadgetCallback], so that when we're ready to search
@@ -98,16 +117,22 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun updateDisplay(value: Float) = display?.run {
-        try {
-            display(value.toDouble())
-        } catch (e: IOException) {
-            Log.e(TAG, "Error setting display", e)
+    private fun updateDisplay(value: Float) {
+        display?.run {
+            try {
+                display(value.toDouble())
+            } catch (e: IOException) {
+                Log.e(TAG, "Error setting display", e)
+            }
         }
+
+        text.text = getString(R.string.format_temp, value)
     }
 
-    private fun playConnectedSound() {
+    private fun onSensorConnected() {
         playSlide(440F, (440 * 4F))
+
+        text.text = getString(R.string.sensor_connected)
     }
 
     private fun playSlide(start: Float, end: Float, repeat: Int = 1) {
@@ -135,8 +160,9 @@ class MainActivity : Activity() {
         runOnUiThread({ slide.start() })
     }
 
-    private fun playDisconnectedSound() {
+    private fun onSensorDisconnected() {
         playSlide(440F * 4, 440F)
+        text.text = getString(R.string.sensor_disconnected)
     }
 
     private inner class HedgebaseGadgetManagerCallback : GadgetManagerCallback {
@@ -215,7 +241,7 @@ class MainActivity : Activity() {
         override fun onGadgetDisconnected(gadget: Gadget) {
             Log.d(TAG, "onGadgetDisconnected")
 
-            playDisconnectedSound()
+            onSensorDisconnected()
 
             tearDownGadgetConnection()
             setupGadgetConnection()
@@ -247,7 +273,7 @@ class MainActivity : Activity() {
                 Log.d(TAG, "subscribing to temp/humidity service")
                 subscribe()
 
-                playConnectedSound()
+                onSensorConnected()
             } ?: Log.d(TAG, "Unable to find temp/humidity service")
         }
 
@@ -289,6 +315,8 @@ val speakerPwmPin: String
         DEVICE_IMX7D_PICO -> "PWM2"
         else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
     }
+
+private const val RELAY_SWITCH_GPIO_PIN = "PWM0"
 
 private const val DEVICE_RPI3 = "rpi3"
 private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"

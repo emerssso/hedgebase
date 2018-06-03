@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Hedgebase</string>
+    <string name="searching_for_sensor">Searching for sensor</string>
+    <string name="sensor_connected">Sensor connected</string>
+    <string name="format_temp">%.2f°F</string>
+    <string name="sensor_disconnected">Sensor disconnected</string>
 </resources>
