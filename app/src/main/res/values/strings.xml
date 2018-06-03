@@ -4,4 +4,5 @@
     <string name="sensor_connected">Sensor connected</string>
     <string name="format_temp">%.2f°F</string>
     <string name="sensor_disconnected">Sensor disconnected</string>
+    <string name="unable_to_discover">Unable to discover devices</string>
 </resources>

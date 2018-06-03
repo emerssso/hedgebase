@@ -4,6 +4,7 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -11,6 +12,7 @@ import android.view.animation.LinearInterpolator
 import android.widget.TextView
 import com.google.android.things.contrib.driver.ht16k33.AlphanumericDisplay
 import com.google.android.things.contrib.driver.pwmspeaker.Speaker
+import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
@@ -30,6 +32,8 @@ class MainActivity : Activity() {
 
     private var display: AlphanumericDisplay? = null
     private var speaker: Speaker? = null
+
+    private var relaySwitch: Gpio? = null
 
     private lateinit var text: TextView
 
@@ -51,6 +55,10 @@ class MainActivity : Activity() {
         for(i in instance.gpioList) {
             Log.d(TAG, "gpio: $i")
         }
+
+        relaySwitch = instance.openGpio("GPIO2_IO05")
+        relaySwitch?.setActiveType(Gpio.ACTIVE_HIGH)
+        relaySwitch?.setDirection(Gpio.DIRECTION_OUT_INITIALLY_HIGH)
     }
 
     /**
@@ -94,8 +102,7 @@ class MainActivity : Activity() {
         tearDownDisplay()
 
         speaker?.close()
-
-
+        relaySwitch?.close()
     }
 
     /**
@@ -179,6 +186,8 @@ class MainActivity : Activity() {
             if (!gadgetManager.startGadgetDiscovery(SCAN_DURATION_MS, NAME_FILTER, UUID_FILTER)) {
                 // Failed with starting a scan
                 Log.e(TAG, "Could not start discovery")
+
+                text.text = getString(R.string.unable_to_discover)
             }
         }
 
@@ -231,27 +240,59 @@ class MainActivity : Activity() {
             dataPoint?.run {
                 updateDisplay(fahrenheit)
 
-                if(fahrenheit < 70 || fahrenheit > 85) {
+                checkTempThresholds(fahrenheit)
+
+                logTemp(fahrenheit)
+            }
+        }
+
+        /**
+         * Check the [temp] against our thresholds:
+         * if below [COMFORT_TEMP_LOW] when [relaySwitch] is off, color temp blue and turn on switch
+         * if above [COMFORT_TEMP_HIGH] when [relaySwitch] is on, color temp red and turn off switch
+         * if within comfort temp range, color text default and disable audible alarm
+         * if outside [SAFE_TEMP_LOW] to [SAFE_TEMP_HIGH] play an audible alarm
+         */
+        private fun checkTempThresholds(temp: Float) {
+            when {
+                temp < COMFORT_TEMP_LOW && !relaySwitch.on -> {
+                    relaySwitch.on = true
+                    text.setTextColor(Color.valueOf(0f, 0f, 1f).toArgb())
+                    Log.d(TAG, "turn on heat")
+                }
+                temp > COMFORT_TEMP_HIGH && relaySwitch.on -> {
+                    //relaySwitch.on = false
+                    text.setTextColor(Color.valueOf(1f, 0f, 0f).toArgb())
+                    Log.d(TAG, "turn off heat")
+                }
+                temp !in SAFE_TEMP_LOW..SAFE_TEMP_HIGH ->
                     playSlide(440F, 440F * 4, 50)
-                } else {
+                temp in COMFORT_TEMP_LOW..COMFORT_TEMP_HIGH -> {
                     speaker?.stop()
+                    text.setTextColor(getColor(android.R.color.white))
                 }
+            }
+        }
 
-                val now = Instant.now()
-                if(lastSavedTemp.isBefore(now.minus(15L, ChronoUnit.MINUTES))) {
-                    Log.d(TAG, "Recording temperature $fahrenheit at $now")
+        /**
+         * Log [temp] with current timestamp to Firestore, once uniquely, and once in a "current"
+         * position that is replaced with each logging.
+         */
+        private fun logTemp(temp: Float) {
+            val now = Instant.now()
+            if (lastSavedTemp.isBefore(now.minus(15L, ChronoUnit.MINUTES))) {
+                Log.d(TAG, "Recording temperature $temp at $now")
 
-                    val data = mapOf(
-                            "temp" to fahrenheit,
-                            "time" to Timestamp(now.epochSecond, 0)
-                    )
-                    firestore.collection("temperatures")
-                            .add(data)
+                val data = mapOf(
+                        "temp" to temp,
+                        "time" to Timestamp(now.epochSecond, 0)
+                )
+                firestore.collection("temperatures")
+                        .add(data)
 
-                    firestore.document("temperatures/current").set(data)
+                firestore.document("temperatures/current").set(data)
 
-                    lastSavedTemp = now
-                }
+                lastSavedTemp = now
             }
         }
 
@@ -342,6 +383,11 @@ val speakerPwmPin: String
         else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
     }
 
+private const val COMFORT_TEMP_LOW = 74f
+private const val COMFORT_TEMP_HIGH = 78f
+private const val SAFE_TEMP_LOW = 70f
+private const val SAFE_TEMP_HIGH = 85f
+
 private const val DEVICE_RPI3 = "rpi3"
 private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
 
@@ -370,3 +416,7 @@ private val UUID_FILTER = arrayOf(
         SHTC1TemperatureAndHumidityService.SERVICE_UUID,
         SensorTagTemperatureAndHumidityService.SERVICE_UUID
 )
+
+private var Gpio?.on: Boolean
+    get() = this?.value ?: false
+    set(new) { this?.value = new }
