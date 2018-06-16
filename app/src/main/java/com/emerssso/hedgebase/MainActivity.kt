@@ -397,19 +397,6 @@ val speakerPwmPin: String
         else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
     }
 
-private const val COMFORT_TEMP_LOW = 75f
-private const val COMFORT_TEMP_HIGH = 78f
-private const val SAFE_TEMP_LOW = 73f
-private const val SAFE_TEMP_HIGH = 85f
-
-private const val GPIO_ALWAYS_ON = "GPIO6_IO14"
-private const val GPIO_RELAY_SWITCH = "GPIO6_IO12"
-
-private const val DEVICE_RPI3 = "rpi3"
-private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
-
-private const val DEVICE_IMX7D_PICO = "imx7d_pico"
-private const val UNIT_CELSIUS = "°C"
 private val Float.cToF: Float get() = this * 9 / 5 + 32
 
 private val GadgetDataPoint.fahrenheit: Float
@@ -419,20 +406,6 @@ private val GadgetDataPoint.fahrenheit: Float
         } else {
             temperature
         }
-
-private const val SCAN_DURATION_MS = 60000L
-private val NAME_FILTER = arrayOf(
-        "SHTC1 smart gadget",
-        "SHTC1 smart gadget\u0002",
-        "Smart Humigadget",
-        "SensorTag"
-)
-private val UUID_FILTER = arrayOf(
-        SHT3xTemperatureService.SERVICE_UUID,
-        SHT3xHumidityService.SERVICE_UUID,
-        SHTC1TemperatureAndHumidityService.SERVICE_UUID,
-        SensorTagTemperatureAndHumidityService.SERVICE_UUID
-)
 
 private var Gpio?.on: Boolean
     get() = this?.value ?: false
