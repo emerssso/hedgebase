@@ -34,6 +34,7 @@ class MainActivity : Activity() {
     private var speaker: Speaker? = null
 
     private var relaySwitch: Gpio? = null
+    private var alwaysOn: Gpio? = null
 
     private lateinit var text: TextView
 
@@ -50,15 +51,26 @@ class MainActivity : Activity() {
         setupGadgetConnection()
         setUpDisplay()
         setUpSpeaker()
-        val instance = PeripheralManager.getInstance()
+        setUpRelaySwitch()
+    }
 
-        for(i in instance.gpioList) {
-            Log.d(TAG, "gpio: $i")
+    private fun setUpRelaySwitch() {
+        val peripheralManager = PeripheralManager.getInstance()
+
+        //set translation target GPIO to always on.
+        alwaysOn = peripheralManager.openGpio(GPIO_ALWAYS_ON)?.also {
+            it.setDirection(Gpio.DIRECTION_OUT_INITIALLY_HIGH)
         }
 
-        relaySwitch = instance.openGpio("GPIO2_IO05")
-        relaySwitch?.setActiveType(Gpio.ACTIVE_HIGH)
-        relaySwitch?.setDirection(Gpio.DIRECTION_OUT_INITIALLY_HIGH)
+        //Get reference to relay switch
+        relaySwitch = peripheralManager.openGpio(GPIO_RELAY_SWITCH)
+
+        relaySwitch?.run {
+            setActiveType(Gpio.ACTIVE_HIGH)
+            setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
+        } ?: run {
+            Log.w(TAG, "Unable to find relay switch, lamp control unavailable")
+        }
     }
 
     /**
@@ -102,6 +114,7 @@ class MainActivity : Activity() {
         tearDownDisplay()
 
         speaker?.close()
+        alwaysOn?.close()
         relaySwitch?.close()
     }
 
@@ -255,13 +268,13 @@ class MainActivity : Activity() {
          */
         private fun checkTempThresholds(temp: Float) {
             when {
-                temp < COMFORT_TEMP_LOW && !relaySwitch.on -> {
-                    relaySwitch.on = true
+                temp < COMFORT_TEMP_LOW && relaySwitch.on -> {
+                    relaySwitch.on = false
                     text.setTextColor(Color.valueOf(0f, 0f, 1f).toArgb())
                     Log.d(TAG, "turn on heat")
                 }
-                temp > COMFORT_TEMP_HIGH && relaySwitch.on -> {
-                    //relaySwitch.on = false
+                temp > COMFORT_TEMP_HIGH && !relaySwitch.on -> {
+                    relaySwitch.on = true
                     text.setTextColor(Color.valueOf(1f, 0f, 0f).toArgb())
                     Log.d(TAG, "turn off heat")
                 }
@@ -285,7 +298,8 @@ class MainActivity : Activity() {
 
                 val data = mapOf(
                         "temp" to temp,
-                        "time" to Timestamp(now.epochSecond, 0)
+                        "time" to Timestamp(now.epochSecond, 0),
+                        "lamp" to !relaySwitch.on
                 )
                 firestore.collection("temperatures")
                         .add(data)
@@ -383,10 +397,13 @@ val speakerPwmPin: String
         else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
     }
 
-private const val COMFORT_TEMP_LOW = 74f
+private const val COMFORT_TEMP_LOW = 75f
 private const val COMFORT_TEMP_HIGH = 78f
-private const val SAFE_TEMP_LOW = 70f
+private const val SAFE_TEMP_LOW = 73f
 private const val SAFE_TEMP_HIGH = 85f
+
+private const val GPIO_ALWAYS_ON = "GPIO6_IO14"
+private const val GPIO_RELAY_SWITCH = "GPIO6_IO12"
 
 private const val DEVICE_RPI3 = "rpi3"
 private const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
