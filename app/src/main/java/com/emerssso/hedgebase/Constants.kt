@@ -43,6 +43,7 @@ internal const val DEVICE_IMX6UL_PICO = "imx6ul_pico"
 internal const val DEVICE_IMX7D_PICO = "imx7d_pico"
 
 internal const val UNIT_CELSIUS = "°C"
+internal const val UNIT_BATTERY = "%"
 
 /** How long to scan for a temp sensor on BLE */
 internal const val SCAN_DURATION_MS = 60000L

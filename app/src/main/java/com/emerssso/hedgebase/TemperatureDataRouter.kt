@@ -24,11 +24,10 @@ internal class TemperatureDataRouter(
         private val temperatureDisplay: TemperatureDisplay
 ) : GadgetManagerCallback {
 
+    private var context: Context? = null
     private var gadget: Gadget? = null
 
     private val gadgetManager = GadgetManagerFactory.create(this)
-
-    private var context: Context? = null
 
     fun setupGadgetConnection(applicationContext: Context) {
         gadgetManager.initialize(applicationContext)
@@ -82,10 +81,13 @@ internal class TemperatureDataRouter(
                             Log.d(TAG, "${it.value} ${it.unit} at ${it.timestamp}")
                         }
 
+                firestore.document(PATH_ALERT_DISCONNECTED).delete()
+
                 gadget = this
             } else {
                 Log.d(TAG, "unable to connect to device $newGadget")
-                Log.d(TAG, "unable to connect to device $newGadget")
+                firestore.document(PATH_ALERT_DISCONNECTED)
+                        .set(alertMessage("Unable to connect to temperature sensor!"))
             }
         }
     }
@@ -93,6 +95,9 @@ internal class TemperatureDataRouter(
     override fun onGadgetDiscoveryFailed() {
         Log.w(TAG, "gadget discovery failed")
         relaySwitch.on = false
+
+        firestore.document(PATH_ALERT_DISCONNECTED)
+                .set(alertMessage("Unable to connect to temperature sensor!"))
     }
 
     private inner class SHTC1GadgetListener : GadgetListener {
@@ -131,8 +136,22 @@ internal class TemperatureDataRouter(
                     temperatureDisplay.onAboveComfort()
                     Log.d(TAG, "turn off heat")
                 }
-                temp !in SAFE_TEMP_LOW..SAFE_TEMP_HIGH -> temperatureDisplay.onNotSafe()
-                temp in COMFORT_TEMP_LOW..COMFORT_TEMP_HIGH -> temperatureDisplay.onComfortable()
+                temp !in SAFE_TEMP_LOW..SAFE_TEMP_HIGH -> {
+                    temperatureDisplay.onNotSafe()
+
+                    val message = if(temp < SAFE_TEMP_LOW) {
+                        "Temperature is dangerously low!"
+                    } else {
+                        "Temperature is dangerously high!"
+                    }
+
+                    firestore.document(PATH_ALERTS_TEMP).set(alertMessage(message))
+                }
+                temp in COMFORT_TEMP_LOW..COMFORT_TEMP_HIGH -> {
+                    temperatureDisplay.onComfortable()
+
+                    firestore.document(PATH_ALERTS_TEMP).delete()
+                }
             }
         }
 
@@ -150,10 +169,10 @@ internal class TemperatureDataRouter(
                         "time" to Timestamp(now.epochSecond, 0),
                         "lamp" to !relaySwitch.on
                 )
-                firestore.collection("temperatures")
-                        .add(data)
 
-                firestore.document("temperatures/current").set(data)
+                firestore.collection(PATH_TEMPS).add(data)
+
+                firestore.document(PATH_TEMP_CURRENT).set(data)
 
                 lastSavedTemp = now
             }
@@ -178,6 +197,9 @@ internal class TemperatureDataRouter(
                 tearDownGadgetConnection()
                 setupGadgetConnection(it)
             } ?: Log.w(TAG, "Context null, unable to reset gadget connection")
+
+            firestore.document(PATH_ALERT_DISCONNECTED)
+                    .set(alertMessage("Temperature sensor disconnected!"))
         }
 
         override fun onSetLoggerIntervalFailed(gadget: Gadget, service: GadgetDownloadService) {
@@ -200,7 +222,7 @@ internal class TemperatureDataRouter(
             Log.d(TAG, "onGadgetConnected")
             val service = gadget.getServicesOfType(SHTC1TemperatureAndHumidityService::class.java)
                     .firstOrNull { it is SHTC1TemperatureAndHumidityService }
-                    as SHTC1TemperatureAndHumidityService?
+                    as? SHTC1TemperatureAndHumidityService?
 
             service?.run {
                 Log.d(TAG, "subscribing to temp/humidity service")
@@ -226,13 +248,28 @@ internal class TemperatureDataRouter(
 
             for (value in values) {
                 Log.d(TAG, "${value.value} ${value.unit} at ${value.timestamp}")
+                if(value.unit == "%" && value.value.toFloat() < 25f) {
+                    firestore.document(PATH_ALERTS_BATTERY)
+                            .set(alertMessage("Sensor battery low: ${value.value}%"))
+                } else {
+                    firestore.document(PATH_ALERTS_BATTERY).delete()
+                }
             }
         }
     }
-
 }
 
 private const val TAG = "GadgetManagerCallback"
+
+private const val KEY_ALERT_MESSAGE = "message"
+
+private const val PATH_ALERTS = "alerts"
+private const val PATH_ALERT_DISCONNECTED = "$PATH_ALERTS/disconnected"
+private const val PATH_ALERTS_TEMP = "$PATH_ALERTS/temperature"
+private const val PATH_ALERTS_BATTERY = "$PATH_ALERTS/battery"
+
+private const val PATH_TEMPS = "temperatures"
+private const val PATH_TEMP_CURRENT = "$PATH_TEMPS/current"
 
 /** helper function that converts Celsius to Fahrenheit */
 private val Float.cToF: Float get() = this * 9 / 5 + 32
@@ -270,3 +307,8 @@ interface TemperatureDisplay {
 
     fun onComfortable()
 }
+
+/**
+ * Generates a map to be used for alert messages with Firestore
+ */
+private fun alertMessage(message: String) = mapOf(KEY_ALERT_MESSAGE to message)
