@@ -63,6 +63,7 @@ internal class TemperatureDataRouter(
 
     override fun onGadgetManagerInitializationFailed() {
         Log.e(TAG, "gadget manager init failed")
+        relaySwitch.on = false
     }
 
     override fun onGadgetDiscovered(newGadget: Gadget?, rssi: Int) {
@@ -91,6 +92,7 @@ internal class TemperatureDataRouter(
 
     override fun onGadgetDiscoveryFailed() {
         Log.w(TAG, "gadget discovery failed")
+        relaySwitch.on = false
     }
 
     private inner class SHTC1GadgetListener : GadgetListener {
@@ -168,6 +170,7 @@ internal class TemperatureDataRouter(
 
         override fun onGadgetDisconnected(gadget: Gadget) {
             Log.d(TAG, "onGadgetDisconnected")
+            relaySwitch.on = false
 
             temperatureDisplay.onSensorDisconnected()
 
