@@ -15,6 +15,7 @@ import com.google.android.things.contrib.driver.pwmspeaker.Speaker
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.sensirion.libsmartgadget.smartgadget.GadgetManagerFactory
 import java.io.IOException
 
@@ -23,8 +24,6 @@ class MainActivity : Activity(), TemperatureDisplay {
 
     private lateinit var gadgetCallback: TemperatureDataRouter
 
-    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
-
     private var display: AlphanumericDisplay? = null
     private var speaker: Speaker? = null
 
@@ -32,6 +31,16 @@ class MainActivity : Activity(), TemperatureDisplay {
     private var alwaysOn: Gpio? = null
 
     private lateinit var text: TextView
+
+    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+
+    init {
+        val settings = FirebaseFirestoreSettings.Builder()
+                .setTimestampsInSnapshotsEnabled(true)
+                .build()
+
+        firestore.firestoreSettings = settings
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

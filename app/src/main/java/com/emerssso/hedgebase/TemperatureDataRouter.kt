@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.android.things.pio.Gpio
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
 import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.BatteryService
@@ -81,13 +82,13 @@ internal class TemperatureDataRouter(
                             Log.d(TAG, "${it.value} ${it.unit} at ${it.timestamp}")
                         }
 
-                firestore.document(PATH_ALERT_DISCONNECTED).delete()
+                firestore.document(PATH_ALERT_DISCONNECTED).clearAlert()
 
                 gadget = this
             } else {
                 Log.d(TAG, "unable to connect to device $newGadget")
                 firestore.document(PATH_ALERT_DISCONNECTED)
-                        .set(alertMessage("Unable to connect to temperature sensor!"))
+                        .setAlert("Unable to connect to temperature sensor!")
             }
         }
     }
@@ -97,7 +98,7 @@ internal class TemperatureDataRouter(
         relaySwitch.on = false
 
         firestore.document(PATH_ALERT_DISCONNECTED)
-                .set(alertMessage("Unable to connect to temperature sensor!"))
+                .setAlert("Unable to connect to temperature sensor!")
     }
 
     private inner class SHTC1GadgetListener : GadgetListener {
@@ -145,12 +146,12 @@ internal class TemperatureDataRouter(
                         "Temperature is dangerously high!"
                     }
 
-                    firestore.document(PATH_ALERTS_TEMP).set(alertMessage(message))
+                    firestore.document(PATH_ALERTS_TEMP).setAlert(message)
                 }
                 temp in COMFORT_TEMP_LOW..COMFORT_TEMP_HIGH -> {
                     temperatureDisplay.onComfortable()
 
-                    firestore.document(PATH_ALERTS_TEMP).delete()
+                    firestore.document(PATH_ALERTS_TEMP).clearAlert()
                 }
             }
         }
@@ -199,7 +200,7 @@ internal class TemperatureDataRouter(
             } ?: Log.w(TAG, "Context null, unable to reset gadget connection")
 
             firestore.document(PATH_ALERT_DISCONNECTED)
-                    .set(alertMessage("Temperature sensor disconnected!"))
+                    .setAlert("Temperature sensor disconnected!")
         }
 
         override fun onSetLoggerIntervalFailed(gadget: Gadget, service: GadgetDownloadService) {
@@ -250,9 +251,9 @@ internal class TemperatureDataRouter(
                 Log.d(TAG, "${value.value} ${value.unit} at ${value.timestamp}")
                 if(value.unit == "%" && value.value.toFloat() < 25f) {
                     firestore.document(PATH_ALERTS_BATTERY)
-                            .set(alertMessage("Sensor battery low: ${value.value}%"))
+                            .setAlert("Sensor battery low: ${value.value}%")
                 } else {
-                    firestore.document(PATH_ALERTS_BATTERY).delete()
+                    firestore.document(PATH_ALERTS_BATTERY).clearAlert()
                 }
             }
         }
@@ -260,8 +261,6 @@ internal class TemperatureDataRouter(
 }
 
 private const val TAG = "GadgetManagerCallback"
-
-private const val KEY_ALERT_MESSAGE = "message"
 
 private const val PATH_ALERTS = "alerts"
 private const val PATH_ALERT_DISCONNECTED = "$PATH_ALERTS/disconnected"
@@ -308,7 +307,31 @@ interface TemperatureDisplay {
     fun onComfortable()
 }
 
-/**
- * Generates a map to be used for alert messages with Firestore
- */
-private fun alertMessage(message: String) = mapOf(KEY_ALERT_MESSAGE to message)
+private const val KEY_ALERT_MESSAGE = "message"
+private const val KEY_ALERT_ACTIVE = "active"
+private const val KEY_ALERT_TIME = "time"
+
+private fun DocumentReference.setAlert(message: String) {
+    Log.d(TAG, "Setting alert: $message")
+
+    set(mapOf(
+            KEY_ALERT_MESSAGE to message,
+            KEY_ALERT_ACTIVE to true,
+            KEY_ALERT_TIME to Timestamp.now()
+    ))
+}
+
+//Clears the alert if it is active, else does nothing
+private fun DocumentReference.clearAlert() {
+    get().addOnCompleteListener {
+        if(it.result[KEY_ALERT_ACTIVE] as? Boolean == true) {
+            Log.d(TAG, "clearing alert")
+            set(mapOf(
+                    KEY_ALERT_ACTIVE to false,
+                    KEY_ALERT_TIME to Timestamp.now())
+            )
+        } else {
+            Log.d(TAG, "alert not set, skipping clear")
+        }
+    }
+}
