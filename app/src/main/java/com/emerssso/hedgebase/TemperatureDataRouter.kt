@@ -327,10 +327,18 @@ private fun DocumentReference.clearAlert() {
     get().addOnCompleteListener {
         if(it.result[KEY_ALERT_ACTIVE] as? Boolean == true) {
             Log.d(TAG, "clearing alert")
-            update(mapOf(
-                    KEY_ALERT_ACTIVE to false,
-                    KEY_ALERT_TIME_END to Timestamp.now())
-            )
+
+            //Copy cleared alert out of active namespace for posterity; delete active instance
+            it.result.data?.let { data ->
+                data.putAll(mapOf(
+                        KEY_ALERT_ACTIVE to false,
+                        KEY_ALERT_TIME_END to Timestamp.now())
+                )
+
+                firestore.collection(PATH_ALERTS)
+                        .add(data)
+                        .addOnCompleteListener { delete() }
+            }
         } else {
             Log.d(TAG, "alert not set, skipping clear")
         }
