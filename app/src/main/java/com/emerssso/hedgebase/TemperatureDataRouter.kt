@@ -327,7 +327,7 @@ private fun DocumentReference.clearAlert() {
     get().addOnCompleteListener {
         if(it.result[KEY_ALERT_ACTIVE] as? Boolean == true) {
             Log.d(TAG, "clearing alert")
-            set(mapOf(
+            update(mapOf(
                     KEY_ALERT_ACTIVE to false,
                     KEY_ALERT_TIME_END to Timestamp.now())
             )
