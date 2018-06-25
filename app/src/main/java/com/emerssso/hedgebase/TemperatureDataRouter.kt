@@ -309,7 +309,8 @@ interface TemperatureDisplay {
 
 private const val KEY_ALERT_MESSAGE = "message"
 private const val KEY_ALERT_ACTIVE = "active"
-private const val KEY_ALERT_TIME = "time"
+private const val KEY_ALERT_TIME_START = "start"
+private const val KEY_ALERT_TIME_END = "end"
 
 private fun DocumentReference.setAlert(message: String) {
     Log.d(TAG, "Setting alert: $message")
@@ -317,7 +318,7 @@ private fun DocumentReference.setAlert(message: String) {
     set(mapOf(
             KEY_ALERT_MESSAGE to message,
             KEY_ALERT_ACTIVE to true,
-            KEY_ALERT_TIME to Timestamp.now()
+            KEY_ALERT_TIME_START to Timestamp.now()
     ))
 }
 
@@ -328,7 +329,7 @@ private fun DocumentReference.clearAlert() {
             Log.d(TAG, "clearing alert")
             set(mapOf(
                     KEY_ALERT_ACTIVE to false,
-                    KEY_ALERT_TIME to Timestamp.now())
+                    KEY_ALERT_TIME_END to Timestamp.now())
             )
         } else {
             Log.d(TAG, "alert not set, skipping clear")
