@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.animation.LinearInterpolator
 import android.widget.TextView
+import android.widget.ToggleButton
 import com.google.android.things.contrib.driver.ht16k33.AlphanumericDisplay
 import com.google.android.things.contrib.driver.pwmspeaker.Speaker
 import com.google.android.things.pio.Gpio
@@ -22,7 +23,7 @@ import java.io.IOException
 
 class MainActivity : Activity(), TemperatureDisplay {
 
-    private lateinit var gadgetCallback: TemperatureDataRouter
+    private lateinit var tempDataRouter: TemperatureDataRouter
 
     private var display: AlphanumericDisplay? = null
     private var speaker: Speaker? = null
@@ -31,6 +32,7 @@ class MainActivity : Activity(), TemperatureDisplay {
     private var alwaysOn: Gpio? = null
 
     private lateinit var text: TextView
+    private lateinit var tempToggle: ToggleButton
 
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 
@@ -47,6 +49,11 @@ class MainActivity : Activity(), TemperatureDisplay {
 
         setContentView(R.layout.activity_main)
         text = findViewById(R.id.textView)
+        tempToggle = findViewById(R.id.toggleButton)
+
+        tempToggle.setOnCheckedChangeListener { _, isChecked ->
+            tempDataRouter.requestHeatLampOn(isChecked)
+        }
     }
 
     override fun onStart() {
@@ -80,14 +87,14 @@ class MainActivity : Activity(), TemperatureDisplay {
 
     /**
      * Initializes [GadgetManagerFactory] (BLE temperature sensor)
-     * with [gadgetCallback], so that when we're ready to search
+     * with [tempDataRouter], so that when we're ready to search
      * for gadgets, we can start right away.
      */
     private fun setupGadgetConnection() {
-        gadgetCallback = TemperatureDataRouter(firestore, relaySwitch,
+        tempDataRouter = TemperatureDataRouter(firestore, relaySwitch,
                 temperatureDisplay = this)
 
-        gadgetCallback.setupGadgetConnection(applicationContext)
+        tempDataRouter.setupGadgetConnection(applicationContext)
     }
 
     /**
@@ -128,7 +135,7 @@ class MainActivity : Activity(), TemperatureDisplay {
     /**
      * Destroy any existing connections to BLE devices
      */
-    private fun tearDownGadgetConnection() = gadgetCallback.tearDownGadgetConnection()
+    private fun tearDownGadgetConnection() = tempDataRouter.tearDownGadgetConnection()
 
     /**
      * Releases our hold on the [AlphanumericDisplay]
@@ -167,15 +174,22 @@ class MainActivity : Activity(), TemperatureDisplay {
         text.text = getString(R.string.unable_to_discover)
     }
 
-    override fun onBelowComfort() = text.setTextColor(Color.valueOf(0f, 0f, 1f).toArgb())
+    override fun onBelowComfort() {
+        text.setTextColor(Color.valueOf(0f, 0f, 1f).toArgb())
+        tempToggle.enabled = false
+    }
 
-    override fun onAboveComfort() = text.setTextColor(Color.valueOf(1f, 0f, 0f).toArgb())
+    override fun onAboveComfort() {
+        text.setTextColor(Color.valueOf(1f, 0f, 0f).toArgb())
+        tempToggle.enabled = false
+    }
 
     override fun onNotSafe() = playSlide(440F, 440F * 4, 50)
 
     override fun onComfortable() {
         speaker?.stop()
         text.setTextColor(getColor(android.R.color.white))
+        tempToggle.enabled = true
     }
 
     private fun playSlide(start: Float, end: Float, repeat: Int = 1) {
@@ -200,12 +214,13 @@ class MainActivity : Activity(), TemperatureDisplay {
                 }
             }
         })
-        runOnUiThread({ slide.start() })
+        runOnUiThread { slide.start() }
     }
 
     override fun onSensorDisconnected() {
         playSlide(440F * 4, 440F)
         text.text = getString(R.string.sensor_disconnected)
+        tempToggle.enabled = true
     }
 }
 
@@ -225,4 +240,12 @@ val speakerPwmPin: String
         DEVICE_IMX6UL_PICO -> "PWM8"
         DEVICE_IMX7D_PICO -> "PWM2"
         else -> throw IllegalArgumentException("Unknown device: " + Build.DEVICE)
+    }
+
+/** convenience wrapper around isEnabled that also sets alpha */
+private var ToggleButton.enabled: Boolean
+    get() = isEnabled
+    set(value) {
+        isEnabled = value
+        alpha = if(value) 0f else 0.25f
     }

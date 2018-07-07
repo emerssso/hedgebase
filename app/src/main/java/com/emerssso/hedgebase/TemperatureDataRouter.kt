@@ -101,6 +101,10 @@ internal class TemperatureDataRouter(
                 .setAlert("Unable to connect to temperature sensor!")
     }
 
+    fun requestHeatLampOn(on: Boolean) {
+        relaySwitch.on = !on
+    }
+
     private inner class SHTC1GadgetListener : GadgetListener {
 
         private var lastSavedTemp: Instant = Instant.MIN
@@ -325,7 +329,8 @@ private fun DocumentReference.setAlert(message: String) {
 //Clears the alert if it is active, else does nothing
 private fun DocumentReference.clearAlert() {
     get().addOnCompleteListener {
-        if(it.result[KEY_ALERT_ACTIVE] as? Boolean == true) {
+
+        if(it.isSuccessful && it.result[KEY_ALERT_ACTIVE] as? Boolean == true) {
             Log.d(TAG, "clearing alert")
 
             //Copy cleared alert out of active namespace for posterity; delete active instance
