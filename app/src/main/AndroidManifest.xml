@@ -5,14 +5,22 @@
     <uses-permission android:name="com.google.android.things.permission.MANAGE_SENSOR_DRIVERS" />
     <uses-permission android:name="com.google.android.things.permission.USE_PERIPHERAL_IO" />
 
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="com.google.android.things.permission.MANAGE_BLUETOOTH" />
-    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"/>
 
-    <application android:label="@string/app_name" android:theme="@style/Theme.AppCompat">
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false" />
+
+    <application
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.AppCompat">
         <uses-library android:name="com.google.android.things" />
 
         <activity android:name=".MainActivity">
@@ -22,9 +30,10 @@
             </intent-filter>
 
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.HOME"/>
-                <category android:name="android.intent.category.DEFAULT"/>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
     </application>

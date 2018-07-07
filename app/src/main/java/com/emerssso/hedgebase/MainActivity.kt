@@ -4,11 +4,18 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
+import android.graphics.PorterDuff
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.animation.LinearInterpolator
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.ToggleButton
 import com.google.android.things.contrib.driver.ht16k33.AlphanumericDisplay
@@ -33,6 +40,7 @@ class MainActivity : Activity(), TemperatureDisplay {
 
     private lateinit var text: TextView
     private lateinit var tempToggle: ToggleButton
+    private var wifiState: ImageView? = null
 
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 
@@ -44,16 +52,35 @@ class MainActivity : Activity(), TemperatureDisplay {
         firestore.firestoreSettings = settings
     }
 
+    private val wifiReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            showWifiStatus()
+        }
+    }
+
+    private fun showWifiStatus() {
+        wifiState?.run {
+            vectorTint = if (checkWifiOnAndConnected()) {
+                getColor(android.R.color.white)
+            } else {
+                RED
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_main)
         text = findViewById(R.id.textView)
         tempToggle = findViewById(R.id.toggleButton)
+        wifiState = findViewById(R.id.wifiIndicator)
 
         tempToggle.setOnCheckedChangeListener { _, isChecked ->
             tempDataRouter.requestHeatLampOn(isChecked)
         }
+
+        showWifiStatus()
     }
 
     override fun onStart() {
@@ -64,6 +91,9 @@ class MainActivity : Activity(), TemperatureDisplay {
         setUpRelaySwitch()
 
         setupGadgetConnection()
+
+        registerReceiver(wifiReceiver,
+                IntentFilter(android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION))
     }
 
     private fun setUpRelaySwitch() {
@@ -130,6 +160,8 @@ class MainActivity : Activity(), TemperatureDisplay {
         speaker?.close()
         alwaysOn?.close()
         relaySwitch?.close()
+
+        unregisterReceiver(wifiReceiver)
     }
 
     /**
@@ -175,12 +207,14 @@ class MainActivity : Activity(), TemperatureDisplay {
     }
 
     override fun onBelowComfort() {
-        text.setTextColor(Color.valueOf(0f, 0f, 1f).toArgb())
+        val BLUE = Color.valueOf(0f, 0f, 1f).toArgb()
+        text.setTextColor(BLUE)
         tempToggle.enabled = false
     }
 
     override fun onAboveComfort() {
-        text.setTextColor(Color.valueOf(1f, 0f, 0f).toArgb())
+
+        text.setTextColor(RED)
         tempToggle.enabled = false
     }
 
@@ -226,6 +260,8 @@ class MainActivity : Activity(), TemperatureDisplay {
 
 private const val TAG = "MainActivity"
 
+private val RED = Color.valueOf(1f, 0f, 0f).toArgb()
+
 val i2cBus: String
     get() = when (Build.DEVICE) {
         DEVICE_RPI3 -> "I2C1"
@@ -247,5 +283,23 @@ private var ToggleButton.enabled: Boolean
     get() = isEnabled
     set(value) {
         isEnabled = value
-        alpha = if(value) 0f else 0.25f
+        alpha = if(value) 1f else 0.25f
+    }
+
+//Based on https://stackoverflow.com/a/34904367/3390459
+private fun Context.checkWifiOnAndConnected(): Boolean {
+    val wifiManager = getSystemService(Context.WIFI_SERVICE) as WifiManager
+
+    return if (wifiManager.isWifiEnabled) { // Wi-Fi adapter is ON
+        wifiManager.connectionInfo.networkId != -1
+
+    } else {
+        false // Wi-Fi adapter is OFF
+    }
+}
+
+private var ImageView.vectorTint: Int
+    get() = 0
+    set(value) {
+        setColorFilter(value, PorterDuff.Mode.SRC_IN)
     }
