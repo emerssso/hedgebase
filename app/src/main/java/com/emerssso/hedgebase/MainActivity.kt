@@ -76,11 +76,19 @@ class MainActivity : Activity(), TemperatureDisplay {
         tempToggle = findViewById(R.id.toggleButton)
         wifiState = findViewById(R.id.wifiIndicator)
 
+        setTempToggleListener()
+
+        showWifiStatus()
+    }
+
+    private fun setTempToggleListener() {
         tempToggle.setOnCheckedChangeListener { _, isChecked ->
             tempDataRouter.requestHeatLampOn(isChecked)
         }
+    }
 
-        showWifiStatus()
+    private fun disableTempToggleListener() {
+        tempToggle.setOnCheckedChangeListener(null)
     }
 
     override fun onStart() {
@@ -196,6 +204,12 @@ class MainActivity : Activity(), TemperatureDisplay {
         text.text = getString(R.string.format_temp, temp)
     }
 
+    override fun updateLampStatus(on: Boolean) {
+        disableTempToggleListener()
+        tempToggle.isChecked = on
+        setTempToggleListener()
+    }
+
     override fun onSensorConnected() {
         playSlide(440F, (440 * 4F))
 
@@ -207,13 +221,11 @@ class MainActivity : Activity(), TemperatureDisplay {
     }
 
     override fun onBelowComfort() {
-        val BLUE = Color.valueOf(0f, 0f, 1f).toArgb()
         text.setTextColor(BLUE)
         tempToggle.enabled = false
     }
 
     override fun onAboveComfort() {
-
         text.setTextColor(RED)
         tempToggle.enabled = false
     }
@@ -261,6 +273,7 @@ class MainActivity : Activity(), TemperatureDisplay {
 private const val TAG = "MainActivity"
 
 private val RED = Color.valueOf(1f, 0f, 0f).toArgb()
+private val BLUE = Color.valueOf(0f, 0f, 1f).toArgb()
 
 val i2cBus: String
     get() = when (Build.DEVICE) {

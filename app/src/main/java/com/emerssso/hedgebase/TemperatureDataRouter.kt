@@ -262,6 +262,14 @@ internal class TemperatureDataRouter(
             }
         }
     }
+
+    /** Returns true if the [Gpio] is on, else false. */
+    private var Gpio?.on: Boolean
+        get() = this?.value ?: false
+        set(new) {
+            this?.value = new
+            temperatureDisplay.updateLampStatus(!new)
+        }
 }
 
 private const val TAG = "GadgetManagerCallback"
@@ -286,11 +294,6 @@ private val GadgetDataPoint.fahrenheit: Float
             temperature
         }
 
-/** Returns true if the [Gpio] is on, else false. */
-private var Gpio?.on: Boolean
-    get() = this?.value ?: false
-    set(new) { this?.value = new }
-
 /** Defines the actions that can be displayed.*/
 interface TemperatureDisplay {
 
@@ -299,6 +302,8 @@ interface TemperatureDisplay {
     fun onSensorDisconnected()
 
     fun updateDisplay(temp: Float)
+
+    fun updateLampStatus(on: Boolean)
 
     fun noDevicesAvailable()
 
