@@ -23,6 +23,7 @@
         android:layout_width="553dp"
         android:layout_height="81dp"
         android:text="@string/searching_for_sensor"
+        android:layout_gravity="center"
         android:textSize="60sp"/>
 
     <ImageView
@@ -32,5 +33,6 @@
         android:layout_margin="16dp"
         android:src="@drawable/wifi"
         android:tint="@android:color/white"
-        android:layout_gravity="top|end"/>
+        android:layout_gravity="top|end"
+        android:contentDescription="@string/wifi_indicator" />
 </LinearLayout>
