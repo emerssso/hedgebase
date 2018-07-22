@@ -1,11 +1,19 @@
 package com.emerssso.hedgebase
 
-import android.content.Context
+import android.app.Application
+import android.graphics.Color
 import android.util.Log
+import androidx.annotation.ColorRes
+import androidx.annotation.StringRes
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
 import com.google.android.things.pio.Gpio
+import com.google.android.things.pio.PeripheralManager
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.BatteryService
 import com.sensirion.libsmartgadget.smartgadget.GadgetManagerFactory
@@ -14,46 +22,100 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 /**
- * Routes the temperature data stream from a BLE temperature sensor to
- * [firestore] for logging,
- * a [temperatureDisplay] for rendering,
- * and a [relaySwitch] to help regulate the temperature
+ * Routes the temperature data stream from a BLE temperature sensor to various [LiveData]
  */
-internal class TemperatureDataRouter(
-        private val firestore: FirebaseFirestore,
-        private val relaySwitch: Gpio?,
-        private val temperatureDisplay: TemperatureDisplay
-) : GadgetManagerCallback {
+internal class TemperatureViewModel(application: Application) :
+        AndroidViewModel(application), GadgetManagerCallback {
 
-    private var context: Context? = null
+    private var relaySwitch: Gpio? = null
+    private var alwaysOn: Gpio? = null
+
     private var gadget: Gadget? = null
 
-    private val gadgetManager = GadgetManagerFactory.create(this)
+    private val gadgetManager = GadgetManagerFactory.create(this).also {
+        it.initialize(application)
+    }
 
-    fun setupGadgetConnection(applicationContext: Context) {
-        gadgetManager.initialize(applicationContext)
-        context = applicationContext
+    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance().also {
+        it.firestoreSettings = FirebaseFirestoreSettings.Builder()
+                .setTimestampsInSnapshotsEnabled(true)
+                .build()
+    }
+
+    //Mutable internal view data
+
+    private val connectionData = MutableLiveData<Boolean>().also { it.postValue(false) }
+    private val heaterData = MutableLiveData<Boolean>().also { it.postValue(false) }
+    private val toggleEnabledData = MutableLiveData<Boolean>().also { it.postValue(true) }
+
+    private val temperatureData = MutableLiveData<String>()
+//            .also { it.postString(R.string.searching_for_sensor) }
+
+    private val textColorData = MutableLiveData<Color>()
+//            .also { it.postColor(android.R.color.white) }
+
+    //External "immutable" view data
+
+    /** Indicates if temperature sensor is connected */
+    val sensorConnection: LiveData<Boolean> = connectionData
+
+    /** Indicates if heater is on */
+    val heaterStatus: LiveData<Boolean> = heaterData
+
+    /** Indicates of heater on/off toggle should be enabled */
+    val heaterToggleEnabled: LiveData<Boolean> = toggleEnabledData
+
+    /** Temperature text to be displayed */
+    val displayText: LiveData<String> = temperatureData
+
+    /** Color of temperature text */
+    val displayTextColor: LiveData<Color> = textColorData
+
+    val app = getApplication<Application>()
+
+    init {
+        val peripheralManager = PeripheralManager.getInstance()
+
+        //set translation target GPIO to always on.
+        alwaysOn = peripheralManager.openGpio(GPIO_ALWAYS_ON)?.also {
+            it.setDirection(Gpio.DIRECTION_OUT_INITIALLY_HIGH)
+        }
+
+        //Get reference to relay switch
+        relaySwitch = peripheralManager.openGpio(GPIO_RELAY_SWITCH)
+
+        relaySwitch?.run {
+            setActiveType(Gpio.ACTIVE_HIGH)
+            setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
+        } ?: run {
+            Log.w(TAG, "Unable to find relay switch, lamp control unavailable")
+        }
     }
 
     fun tearDownGadgetConnection() {
         gadgetManager.stopGadgetDiscovery()
-
-        context?.let { gadgetManager.release(it) }
-                ?: Log.w(TAG, "Unable to release context, reference null")
-
-        context = null
+        gadgetManager.release(getApplication())
 
         gadget?.run {
             disconnect()
         }
     }
 
+    override fun onCleared() {
+        tearDownGadgetConnection()
+
+        alwaysOn?.close()
+        relaySwitch?.close()
+
+        super.onCleared()
+    }
+
     override fun onGadgetManagerInitialized() {
         Log.d(TAG, "manager initialized, start scanning")
         if (!gadgetManager.startGadgetDiscovery(SCAN_DURATION_MS, NAME_FILTER, UUID_FILTER)) {
-            // Failed with starting a scan
+            // Failed with starting a scanapplication.getString
             Log.e(TAG, "Could not start discovery")
-            temperatureDisplay.noDevicesAvailable()
+            temperatureData.postString(R.string.unable_to_discover)
         }
     }
 
@@ -64,6 +126,8 @@ internal class TemperatureDataRouter(
     override fun onGadgetManagerInitializationFailed() {
         Log.e(TAG, "gadget manager init failed")
         relaySwitch.on = false
+
+        temperatureData.postString(R.string.unable_to_discover)
     }
 
     override fun onGadgetDiscovered(newGadget: Gadget?, rssi: Int) {
@@ -114,7 +178,7 @@ internal class TemperatureDataRouter(
             Log.d(TAG, "new data point: " +
                     "${dataPoint?.temperature}${dataPoint?.temperatureUnit}")
             dataPoint?.run {
-                temperatureDisplay.updateDisplay(fahrenheit)
+                temperatureData.postValue(app.getString(R.string.format_temp, fahrenheit))
 
                 checkTempThresholds(fahrenheit)
 
@@ -131,29 +195,32 @@ internal class TemperatureDataRouter(
          */
         private fun checkTempThresholds(temp: Float) {
             when {
-                temp < COMFORT_TEMP_LOW && relaySwitch.on -> {
+                temp < COMFORT_TEMP_LOW -> {
                     relaySwitch.on = false
-                    temperatureDisplay.onBelowComfort()
+                    textColorData.postValue(BLUE)
+                    toggleEnabledData.postValue(false)
+
                     Log.d(TAG, "turn on heat")
                 }
-                temp > COMFORT_TEMP_HIGH && !relaySwitch.on -> {
+                temp > COMFORT_TEMP_HIGH -> {
                     relaySwitch.on = true
-                    temperatureDisplay.onAboveComfort()
+                    textColorData.postValue(RED)
+                    toggleEnabledData.postValue(false)
+
                     Log.d(TAG, "turn off heat")
                 }
                 temp !in SAFE_TEMP_LOW..SAFE_TEMP_HIGH -> {
-                    temperatureDisplay.onNotSafe()
 
-                    val message = if(temp < SAFE_TEMP_LOW) {
-                        "Temperature is dangerously low!"
-                    } else {
-                        "Temperature is dangerously high!"
-                    }
-
-                    firestore.document(PATH_ALERTS_TEMP).setAlert(message)
+                    firestore.document(PATH_ALERTS_TEMP).setAlert(
+                            if (temp <= SAFE_TEMP_LOW) {
+                                "Temperature is dangerously low!"
+                            } else {
+                                "Temperature is dangerously high!"
+                            })
                 }
                 temp in COMFORT_TEMP_LOW..COMFORT_TEMP_HIGH -> {
-                    temperatureDisplay.onComfortable()
+                    textColorData.postValue(Color.valueOf(app.getColor(android.R.color.white)))
+                    toggleEnabledData.postValue(true)
 
                     firestore.document(PATH_ALERTS_TEMP).clearAlert()
                 }
@@ -196,12 +263,11 @@ internal class TemperatureDataRouter(
             Log.d(TAG, "onGadgetDisconnected")
             relaySwitch.on = false
 
-            temperatureDisplay.onSensorDisconnected()
+            connectionData.postValue(false)
+            temperatureData.postString(R.string.sensor_disconnected)
 
-            context?.let {
-                tearDownGadgetConnection()
-                setupGadgetConnection(it)
-            } ?: Log.w(TAG, "Context null, unable to reset gadget connection")
+            tearDownGadgetConnection()
+            gadgetManager.initialize(app)
 
             firestore.document(PATH_ALERT_DISCONNECTED)
                     .setAlert("Temperature sensor disconnected!")
@@ -233,7 +299,8 @@ internal class TemperatureDataRouter(
                 Log.d(TAG, "subscribing to temp/humidity service")
                 subscribe()
 
-                temperatureDisplay.onSensorConnected()
+                connectionData.postValue(true)
+                temperatureData.postString(R.string.sensor_connected)
             } ?: Log.d(TAG, "Unable to find temp/humidity service")
         }
 
@@ -253,7 +320,7 @@ internal class TemperatureDataRouter(
 
             for (value in values) {
                 Log.d(TAG, "${value.value} ${value.unit} at ${value.timestamp}")
-                if(value.unit == "%" && value.value.toFloat() < 25f) {
+                if (value.unit == "%" && value.value.toFloat() < 25f) {
                     firestore.document(PATH_ALERTS_BATTERY)
                             .setAlert("Sensor battery low: ${value.value}%")
                 } else {
@@ -268,8 +335,14 @@ internal class TemperatureDataRouter(
         get() = this?.value ?: false
         set(new) {
             this?.value = new
-            temperatureDisplay.updateLampStatus(!new)
+            heaterData.postValue(!new)
         }
+
+    private fun MutableLiveData<String>.postString(@StringRes resName: Int) =
+            postValue(app.getString(resName))
+
+    private fun MutableLiveData<Color>.postColor(@ColorRes resName: Int) =
+            postValue(Color.valueOf(app.getColor(resName)))
 }
 
 private const val TAG = "GadgetManagerCallback"
@@ -294,32 +367,13 @@ private val GadgetDataPoint.fahrenheit: Float
             temperature
         }
 
-/** Defines the actions that can be displayed.*/
-interface TemperatureDisplay {
-
-    fun onSensorConnected()
-
-    fun onSensorDisconnected()
-
-    fun updateDisplay(temp: Float)
-
-    fun updateLampStatus(on: Boolean)
-
-    fun noDevicesAvailable()
-
-    fun onBelowComfort()
-
-    fun onAboveComfort()
-
-    fun onNotSafe()
-
-    fun onComfortable()
-}
-
 private const val KEY_ALERT_MESSAGE = "message"
 private const val KEY_ALERT_ACTIVE = "active"
 private const val KEY_ALERT_TIME_START = "start"
 private const val KEY_ALERT_TIME_END = "end"
+
+internal val RED = Color.valueOf(1f, 0f, 0f)
+internal val BLUE = Color.valueOf(0f, 0f, 1f)
 
 private fun DocumentReference.setAlert(message: String) {
     Log.d(TAG, "Setting alert: $message")
@@ -335,7 +389,7 @@ private fun DocumentReference.setAlert(message: String) {
 private fun DocumentReference.clearAlert() {
     get().addOnCompleteListener {
 
-        if(it.isSuccessful && it.result[KEY_ALERT_ACTIVE] as? Boolean == true) {
+        if (it.isSuccessful && it.result[KEY_ALERT_ACTIVE] as? Boolean == true) {
             Log.d(TAG, "clearing alert")
 
             //Copy cleared alert out of active namespace for posterity; delete active instance
