@@ -3,28 +3,7 @@
     android:id="@+id/linearLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center">
-
-    <ToggleButton
-        android:id="@+id/toggleButton"
-        android:layout_width="148dp"
-        android:layout_height="148dp"
-        android:layout_margin="15dp"
-        android:background="@drawable/thermometer_toggle"
-        android:backgroundTint="@android:color/white"
-        android:gravity="start"
-        android:padding="16dp"
-        android:text=""
-        android:textOff=""
-        android:textOn=""/>
-
-    <TextView
-        android:id="@+id/textView"
-        android:layout_width="553dp"
-        android:layout_height="81dp"
-        android:text="@string/searching_for_sensor"
-        android:layout_gravity="center"
-        android:textSize="60sp"/>
+    android:orientation="vertical">
 
     <ImageView
         android:id="@+id/wifiIndicator"
@@ -35,4 +14,26 @@
         android:tint="@android:color/white"
         android:layout_gravity="top|end"
         android:contentDescription="@string/wifi_indicator" />
+
+    <ToggleButton
+        android:id="@+id/toggleButton"
+        android:layout_width="148dp"
+        android:layout_height="148dp"
+        android:layout_margin="15dp"
+        android:background="@drawable/thermometer_toggle"
+        android:backgroundTint="@android:color/white"
+        android:layout_gravity="center"
+        android:padding="16dp"
+        android:text=""
+        android:textOff=""
+        android:textOn=""/>
+
+    <TextView
+        android:id="@+id/textView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:gravity="center"
+        android:text="@string/searching_for_sensor"
+        android:textSize="60sp" />
 </LinearLayout>

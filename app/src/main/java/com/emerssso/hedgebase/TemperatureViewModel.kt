@@ -3,11 +3,8 @@ package com.emerssso.hedgebase
 import android.app.Application
 import android.graphics.Color
 import android.util.Log
-import androidx.annotation.ColorRes
-import androidx.annotation.StringRes
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
+import androidx.core.graphics.toColor
+import androidx.lifecycle.*
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
 import com.google.firebase.Timestamp
@@ -27,32 +24,50 @@ import java.time.temporal.ChronoUnit
 internal class TemperatureViewModel(application: Application) :
         AndroidViewModel(application), GadgetManagerCallback {
 
-    private var relaySwitch: Gpio? = null
-    private var alwaysOn: Gpio? = null
+    private val heater: Heater = Heater()
 
     private var gadget: Gadget? = null
 
-    private val gadgetManager = GadgetManagerFactory.create(this).also {
-        it.initialize(application)
-    }
+    private val gadgetManager = GadgetManagerFactory.create(this).apply { initialize(application) }
 
-    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance().also {
-        it.firestoreSettings = FirebaseFirestoreSettings.Builder()
+    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance().apply {
+        firestoreSettings = FirebaseFirestoreSettings.Builder()
                 .setTimestampsInSnapshotsEnabled(true)
                 .build()
     }
 
+    private var lastSavedTemp: Instant = Instant.MIN
+
     //Mutable internal view data
 
-    private val connectionData = MutableLiveData<Boolean>().also { it.postValue(false) }
-    private val heaterData = MutableLiveData<Boolean>().also { it.postValue(false) }
-    private val toggleEnabledData = MutableLiveData<Boolean>().also { it.postValue(true) }
+    private val connectionData = MutableLiveData<Boolean>().apply {
+        postValue(false)
 
-    private val temperatureData = MutableLiveData<String>()
-//            .also { it.postString(R.string.searching_for_sensor) }
+        observeForever {
+            if(it != true) heater.on()
+        }
+    }
+    private val temperatureData = MutableLiveData<Float>().apply {
+        observeForever {
+            checkTempAlerts(it)
+            logTemp(it)
+        }
+    }
 
-    private val textColorData = MutableLiveData<Color>()
-//            .also { it.postColor(android.R.color.white) }
+    private val thermalSafetyData: LiveData<ThermalSafety> =
+            Transformations.map(temperatureData) { it.toSafety() }
+                    .apply {
+                        observeForever {
+                            when (it) {
+                                ThermalSafety.BELOW_SAFE -> heater.on()
+                                ThermalSafety.BELOW_COMFORT -> heater.on()
+                                ThermalSafety.COMFORT -> {} //if comfortable, no change to heater
+                                ThermalSafety.ABOVE_COMFORT -> heater.off()
+                                ThermalSafety.ABOVE_SAFE -> heater.off()
+                                else -> heater.on() //if no data, turn on heater to be safe
+                            }
+                        }
+                    }
 
     //External "immutable" view data
 
@@ -60,37 +75,40 @@ internal class TemperatureViewModel(application: Application) :
     val sensorConnection: LiveData<Boolean> = connectionData
 
     /** Indicates if heater is on */
-    val heaterStatus: LiveData<Boolean> = heaterData
+    val heaterStatus: LiveData<Boolean> = heater.status
 
     /** Indicates of heater on/off toggle should be enabled */
-    val heaterToggleEnabled: LiveData<Boolean> = toggleEnabledData
+    val heaterToggleEnabled: LiveData<Boolean> =
+            Transformations.map(thermalSafetyData) { it == ThermalSafety.COMFORT }
 
     /** Temperature text to be displayed */
-    val displayText: LiveData<String> = temperatureData
+    val displayText: LiveData<String> = MediatorLiveData<String>().apply {
+        addSource(Transformations.map(connectionData) {
+            when (it) {
+                true -> application.getString(R.string.sensor_connected)
+                false -> application.getString(R.string.sensor_disconnected)
+                null -> application.getString(R.string.unable_to_discover)
+            }
+        }) { postValue(it) }
+
+        addSource(Transformations.map<Float, String>(temperatureData) {
+            application.getString(R.string.format_temp, it)
+        }) { postValue(it) }
+    }
 
     /** Color of temperature text */
-    val displayTextColor: LiveData<Color> = textColorData
-
-    val app = getApplication<Application>()
-
-    init {
-        val peripheralManager = PeripheralManager.getInstance()
-
-        //set translation target GPIO to always on.
-        alwaysOn = peripheralManager.openGpio(GPIO_ALWAYS_ON)?.also {
-            it.setDirection(Gpio.DIRECTION_OUT_INITIALLY_HIGH)
-        }
-
-        //Get reference to relay switch
-        relaySwitch = peripheralManager.openGpio(GPIO_RELAY_SWITCH)
-
-        relaySwitch?.run {
-            setActiveType(Gpio.ACTIVE_HIGH)
-            setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
-        } ?: run {
-            Log.w(TAG, "Unable to find relay switch, lamp control unavailable")
+    val displayTextColor: LiveData<Color> = Transformations.map(thermalSafetyData) {
+        when (it) {
+            ThermalSafety.BELOW_SAFE -> BLUE
+            ThermalSafety.BELOW_COMFORT -> BLUE
+            ThermalSafety.COMFORT -> application.getColor(android.R.color.white).toColor()
+            ThermalSafety.ABOVE_COMFORT -> RED
+            ThermalSafety.ABOVE_SAFE -> RED
+            else -> application.getColor(android.R.color.white).toColor()
         }
     }
+
+    val app = getApplication<Application>()
 
     fun tearDownGadgetConnection() {
         gadgetManager.stopGadgetDiscovery()
@@ -104,8 +122,7 @@ internal class TemperatureViewModel(application: Application) :
     override fun onCleared() {
         tearDownGadgetConnection()
 
-        alwaysOn?.close()
-        relaySwitch?.close()
+        heater.disconnect()
 
         super.onCleared()
     }
@@ -115,7 +132,7 @@ internal class TemperatureViewModel(application: Application) :
         if (!gadgetManager.startGadgetDiscovery(SCAN_DURATION_MS, NAME_FILTER, UUID_FILTER)) {
             // Failed with starting a scanapplication.getString
             Log.e(TAG, "Could not start discovery")
-            temperatureData.postString(R.string.unable_to_discover)
+            connectionData.postValue(false)
         }
     }
 
@@ -125,9 +142,8 @@ internal class TemperatureViewModel(application: Application) :
 
     override fun onGadgetManagerInitializationFailed() {
         Log.e(TAG, "gadget manager init failed")
-        relaySwitch.on = false
 
-        temperatureData.postString(R.string.unable_to_discover)
+        connectionData.postValue(false)
     }
 
     override fun onGadgetDiscovered(newGadget: Gadget?, rssi: Int) {
@@ -159,95 +175,69 @@ internal class TemperatureViewModel(application: Application) :
 
     override fun onGadgetDiscoveryFailed() {
         Log.w(TAG, "gadget discovery failed")
-        relaySwitch.on = false
+        connectionData.postValue(false)
 
         firestore.document(PATH_ALERT_DISCONNECTED)
                 .setAlert("Unable to connect to temperature sensor!")
     }
 
-    fun requestHeatLampOn(on: Boolean) {
-        relaySwitch.on = !on
+    /**
+     * Check the [temp] against our thresholds:
+     * if below [COMFORT_TEMP_LOW] when [heater] is off, color temp blue and turn on switch
+     * if above [COMFORT_TEMP_HIGH] when [heater] is on, color temp red and turn off switch
+     * if within comfort temp range, color text default and disable audible alarm
+     * if outside [SAFE_TEMP_LOW] to [SAFE_TEMP_HIGH] play an audible alarm
+     */
+    private fun checkTempAlerts(temp: Float) {
+        when (temp) {
+            !in SAFE_TEMP_LOW..SAFE_TEMP_HIGH -> {
+
+                firestore.document(PATH_ALERTS_TEMP).setAlert(
+                        if (temp <= SAFE_TEMP_LOW) {
+                            "Temperature is dangerously low!"
+                        } else {
+                            "Temperature is dangerously high!"
+                        })
+            }
+            in COMFORT_TEMP_LOW..COMFORT_TEMP_HIGH -> {
+                firestore.document(PATH_ALERTS_TEMP).clearAlert()
+            }
+        }
     }
 
-    private inner class SHTC1GadgetListener : GadgetListener {
+    /**
+     * Log [temp] with current timestamp to Firestore, once uniquely, and once in a "current"
+     * position that is replaced with each logging.
+     */
+    private fun logTemp(temp: Float) {
+        val now = Instant.now()
+        if (lastSavedTemp.isBefore(now.minus(15L, ChronoUnit.MINUTES))) {
+            Log.d(TAG, "Recording temperature $temp at $now")
 
-        private var lastSavedTemp: Instant = Instant.MIN
+            val data = mapOf(
+                    "temp" to temp,
+                    "time" to Timestamp(now.epochSecond, 0),
+                    "lamp" to heater.status.value
+            )
+
+            firestore.collection(PATH_TEMPS).add(data)
+
+            firestore.document(PATH_TEMP_CURRENT).set(data)
+
+            lastSavedTemp = now
+        }
+    }
+
+    fun requestHeatLampOn(on: Boolean) = heater.set(on)
+
+    private inner class SHTC1GadgetListener : GadgetListener {
 
         override fun onGadgetNewDataPoint(gadget: Gadget, service: GadgetService,
                                           dataPoint: GadgetDataPoint?) {
             Log.d(TAG, "new data point: " +
                     "${dataPoint?.temperature}${dataPoint?.temperatureUnit}")
-            dataPoint?.run {
-                temperatureData.postValue(app.getString(R.string.format_temp, fahrenheit))
 
-                checkTempThresholds(fahrenheit)
-
-                logTemp(fahrenheit)
-            }
-        }
-
-        /**
-         * Check the [temp] against our thresholds:
-         * if below [COMFORT_TEMP_LOW] when [relaySwitch] is off, color temp blue and turn on switch
-         * if above [COMFORT_TEMP_HIGH] when [relaySwitch] is on, color temp red and turn off switch
-         * if within comfort temp range, color text default and disable audible alarm
-         * if outside [SAFE_TEMP_LOW] to [SAFE_TEMP_HIGH] play an audible alarm
-         */
-        private fun checkTempThresholds(temp: Float) {
-            when {
-                temp < COMFORT_TEMP_LOW -> {
-                    relaySwitch.on = false
-                    textColorData.postValue(BLUE)
-                    toggleEnabledData.postValue(false)
-
-                    Log.d(TAG, "turn on heat")
-                }
-                temp > COMFORT_TEMP_HIGH -> {
-                    relaySwitch.on = true
-                    textColorData.postValue(RED)
-                    toggleEnabledData.postValue(false)
-
-                    Log.d(TAG, "turn off heat")
-                }
-                temp !in SAFE_TEMP_LOW..SAFE_TEMP_HIGH -> {
-
-                    firestore.document(PATH_ALERTS_TEMP).setAlert(
-                            if (temp <= SAFE_TEMP_LOW) {
-                                "Temperature is dangerously low!"
-                            } else {
-                                "Temperature is dangerously high!"
-                            })
-                }
-                temp in COMFORT_TEMP_LOW..COMFORT_TEMP_HIGH -> {
-                    textColorData.postValue(Color.valueOf(app.getColor(android.R.color.white)))
-                    toggleEnabledData.postValue(true)
-
-                    firestore.document(PATH_ALERTS_TEMP).clearAlert()
-                }
-            }
-        }
-
-        /**
-         * Log [temp] with current timestamp to Firestore, once uniquely, and once in a "current"
-         * position that is replaced with each logging.
-         */
-        private fun logTemp(temp: Float) {
-            val now = Instant.now()
-            if (lastSavedTemp.isBefore(now.minus(15L, ChronoUnit.MINUTES))) {
-                Log.d(TAG, "Recording temperature $temp at $now")
-
-                val data = mapOf(
-                        "temp" to temp,
-                        "time" to Timestamp(now.epochSecond, 0),
-                        "lamp" to !relaySwitch.on
-                )
-
-                firestore.collection(PATH_TEMPS).add(data)
-
-                firestore.document(PATH_TEMP_CURRENT).set(data)
-
-                lastSavedTemp = now
-            }
+            dataPoint?.run { temperatureData.postValue(fahrenheit) }
         }
 
         override fun onSetGadgetLoggingEnabledFailed(gadget: Gadget,
@@ -261,10 +251,8 @@ internal class TemperatureViewModel(application: Application) :
 
         override fun onGadgetDisconnected(gadget: Gadget) {
             Log.d(TAG, "onGadgetDisconnected")
-            relaySwitch.on = false
 
             connectionData.postValue(false)
-            temperatureData.postString(R.string.sensor_disconnected)
 
             tearDownGadgetConnection()
             gadgetManager.initialize(app)
@@ -300,7 +288,6 @@ internal class TemperatureViewModel(application: Application) :
                 subscribe()
 
                 connectionData.postValue(true)
-                temperatureData.postString(R.string.sensor_connected)
             } ?: Log.d(TAG, "Unable to find temp/humidity service")
         }
 
@@ -329,20 +316,6 @@ internal class TemperatureViewModel(application: Application) :
             }
         }
     }
-
-    /** Returns true if the [Gpio] is on, else false. */
-    private var Gpio?.on: Boolean
-        get() = this?.value ?: false
-        set(new) {
-            this?.value = new
-            heaterData.postValue(!new)
-        }
-
-    private fun MutableLiveData<String>.postString(@StringRes resName: Int) =
-            postValue(app.getString(resName))
-
-    private fun MutableLiveData<Color>.postColor(@ColorRes resName: Int) =
-            postValue(Color.valueOf(app.getColor(resName)))
 }
 
 private const val TAG = "GadgetManagerCallback"
@@ -376,8 +349,6 @@ internal val RED = Color.valueOf(1f, 0f, 0f)
 internal val BLUE = Color.valueOf(0f, 0f, 1f)
 
 private fun DocumentReference.setAlert(message: String) {
-    Log.d(TAG, "Setting alert: $message")
-
     set(mapOf(
             KEY_ALERT_MESSAGE to message,
             KEY_ALERT_ACTIVE to true,
@@ -403,8 +374,67 @@ private fun DocumentReference.clearAlert() {
                         .add(data)
                         .addOnCompleteListener { delete() }
             }
-        } else {
-            Log.d(TAG, "alert not set, skipping clear")
         }
+    }
+}
+
+enum class ThermalSafety {
+    BELOW_SAFE,
+    BELOW_COMFORT,
+    COMFORT,
+    ABOVE_COMFORT,
+    ABOVE_SAFE;
+}
+
+fun Float.toSafety(): ThermalSafety {
+    return when {
+        this < SAFE_TEMP_LOW -> ThermalSafety.BELOW_SAFE
+        this < COMFORT_TEMP_LOW -> ThermalSafety.BELOW_COMFORT
+        this > COMFORT_TEMP_HIGH -> ThermalSafety.ABOVE_COMFORT
+        this > SAFE_TEMP_HIGH -> ThermalSafety.ABOVE_SAFE
+        else -> ThermalSafety.COMFORT
+    }
+}
+
+/** Model class that controls the cage heater, and it's on/off state */
+class Heater {
+
+    private val relaySwitch: Gpio?
+    private val alwaysOn: Gpio?
+
+    init {
+        val peripheralManager = PeripheralManager.getInstance()
+
+        //set translation target GPIO to always on.
+        alwaysOn = peripheralManager.openGpio(GPIO_ALWAYS_ON)?.also {
+            it.setDirection(Gpio.DIRECTION_OUT_INITIALLY_HIGH)
+        }
+
+        //Get reference to relay switch
+        relaySwitch = peripheralManager.openGpio(GPIO_RELAY_SWITCH)
+
+        relaySwitch?.run {
+            setActiveType(Gpio.ACTIVE_HIGH)
+            setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
+        } ?: run {
+            Log.w(TAG, "Unable to find relay switch, lamp control unavailable")
+        }
+    }
+
+    private val mutableStatus = MutableLiveData<Boolean>().apply { postValue(true) }
+    val status: LiveData<Boolean> = mutableStatus
+
+    fun on() = set(true)
+
+    fun off() = set(false)
+
+    fun set(status: Boolean) {
+        relaySwitch?.value = !status
+        mutableStatus.postValue(status)
+    }
+
+    fun disconnect() {
+        relaySwitch?.close()
+        alwaysOn?.close()
     }
 }
