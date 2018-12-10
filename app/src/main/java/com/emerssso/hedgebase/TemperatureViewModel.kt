@@ -8,9 +8,7 @@ import androidx.lifecycle.*
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
 import com.google.firebase.Timestamp
-import com.google.firebase.firestore.DocumentReference
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FirebaseFirestoreSettings
+import com.google.firebase.firestore.*
 import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.BatteryService
 import com.sensirion.libsmartgadget.smartgadget.GadgetManagerFactory
@@ -34,6 +32,8 @@ internal class TemperatureViewModel(application: Application) :
         firestoreSettings = FirebaseFirestoreSettings.Builder()
                 .setTimestampsInSnapshotsEnabled(true)
                 .build()
+
+        setListeners(this)
     }
 
     private var lastSavedTemp: Instant = Instant.MIN
@@ -313,6 +313,36 @@ internal class TemperatureViewModel(application: Application) :
                 } else {
                     firestore.document(PATH_ALERTS_BATTERY).clearAlert()
                 }
+            }
+        }
+    }
+
+    private fun setListeners(firestore: FirebaseFirestore) {
+        val commands = firestore.collection("commands")
+
+        commands.document("lamp").addSnapshotListener {snap, e ->
+            if(snap != null) {
+                if(snap.getBoolean("active") == true) {
+                    snap.getBoolean("target")?.let { requestHeatLampOn(it) }
+                    snap.reference.set(mapOf("active" to false))
+                }
+            } else if (e != null) {
+                Log.w(TAG, "can't listen to lamp command: ", e)
+            } else {
+                Log.w(TAG, "lamp: neither snapshot nor error were non-null")
+            }
+        }
+
+        commands.document("sendTemp").addSnapshotListener {snap, e ->
+            if(snap != null) {
+                if(snap.getBoolean("active") == true) {
+                    lastSavedTemp = Instant.MIN
+                    snap.reference.set(mapOf("active" to false))
+                }
+            } else if (e != null) {
+                Log.w(TAG, "can't listen to sendTemp command: ", e)
+            } else {
+                Log.w(TAG, "sendTemp: neither snapshot nor error were non-null")
             }
         }
     }
