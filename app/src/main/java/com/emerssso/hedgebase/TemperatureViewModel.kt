@@ -75,7 +75,15 @@ internal class TemperatureViewModel(application: Application) :
     val sensorConnection: LiveData<Boolean> = connectionData
 
     /** Indicates if heater is on */
-    val heaterStatus: LiveData<Boolean> = heater.status
+    val heaterStatus: LiveData<Boolean> = heater.status.apply {
+        observeForever {
+            Log.d(TAG, "heater status changed.")
+            temperatureData.value?.let {
+                lastSavedTemp = Instant.MIN
+                logTemp(it)
+            } ?: Log.w(TAG, "Unable to log temp when heat lamp changed")
+        }
+    }
 
     /** Indicates of heater on/off toggle should be enabled */
     val heaterToggleEnabled: LiveData<Boolean> =
@@ -460,6 +468,7 @@ class Heater {
 
     fun set(status: Boolean) {
         relaySwitch?.value = !status
+        Log.d(TAG, "set called")
         mutableStatus.postValue(status)
     }
 
