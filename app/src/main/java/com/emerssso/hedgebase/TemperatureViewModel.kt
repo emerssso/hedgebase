@@ -44,7 +44,7 @@ internal class TemperatureViewModel(application: Application) :
         postValue(false)
 
         observeForever {
-            if(it != true) heater.on()
+            if (it != true) heater.on()
         }
     }
     private val temperatureData = MutableLiveData<Float>().apply {
@@ -61,7 +61,8 @@ internal class TemperatureViewModel(application: Application) :
                             when (it) {
                                 ThermalSafety.BELOW_SAFE -> heater.on()
                                 ThermalSafety.BELOW_COMFORT -> heater.on()
-                                ThermalSafety.COMFORT -> {} //if comfortable, no change to heater
+                                ThermalSafety.COMFORT -> {
+                                } //if comfortable, no change to heater
                                 ThermalSafety.ABOVE_COMFORT -> heater.off()
                                 ThermalSafety.ABOVE_SAFE -> heater.off()
                                 else -> heater.on() //if no data, turn on heater to be safe
@@ -78,9 +79,8 @@ internal class TemperatureViewModel(application: Application) :
     val heaterStatus: LiveData<Boolean> = heater.status.apply {
         observeForever {
             Log.d(TAG, "heater status changed.")
-            temperatureData.value?.let {
-                lastSavedTemp = Instant.MIN
-                logTemp(it)
+            temperatureData.value?.let { temp ->
+                forceLogTemp(temp)
             } ?: Log.w(TAG, "Unable to log temp when heat lamp changed")
         }
     }
@@ -219,21 +219,34 @@ internal class TemperatureViewModel(application: Application) :
      */
     private fun logTemp(temp: Float) {
         val now = Instant.now()
-        if (lastSavedTemp.isBefore(now.minus(15L, ChronoUnit.MINUTES))) {
-            Log.d(TAG, "Recording temperature $temp at $now")
 
-            val data = mapOf(
-                    "temp" to temp,
-                    "time" to Timestamp(now.epochSecond, 0),
-                    "lamp" to heater.status.value
-            )
-
-            firestore.collection(PATH_TEMPS).add(data)
-
-            firestore.document(PATH_TEMP_CURRENT).set(data)
-
-            lastSavedTemp = now
+        firestore.document("temperatures/current").get().addOnCompleteListener {
+            if (it.isSuccessful) {
+                val lastCurrent = it.result.getDate("time")?.toInstant()
+                if (lastCurrent == null || lastCurrent.isStale()) {
+                    Log.d(TAG, "firestore current >15 old")
+                    forceLogTemp(temp, now)
+                }
+            } else if (it.isCanceled && lastSavedTemp.isStale()) {
+                Log.w(TAG, "Couldn't get last temp from firestore, falling back to local value")
+                forceLogTemp(temp, now)
+            }
         }
+    }
+
+    private fun forceLogTemp(temp: Float, time: Instant = Instant.now()) {
+        val data = mapOf(
+                "temp" to temp,
+                "time" to Timestamp(time.epochSecond, 0),
+                "lamp" to heater.status.value
+        )
+        Log.d(TAG, "logging temp $temp at $time")
+
+        firestore.collection(PATH_TEMPS).add(data)
+
+        firestore.document(PATH_TEMP_CURRENT).set(data)
+
+        lastSavedTemp = time
     }
 
     fun requestHeatLampOn(on: Boolean) = heater.set(on)
@@ -328,9 +341,9 @@ internal class TemperatureViewModel(application: Application) :
     private fun setListeners(firestore: FirebaseFirestore) {
         val commands = firestore.collection("commands")
 
-        commands.document("lamp").addSnapshotListener {snap, e ->
-            if(snap != null) {
-                if(snap.getBoolean("active") == true) {
+        commands.document("lamp").addSnapshotListener { snap, e ->
+            if (snap != null) {
+                if (snap.getBoolean("active") == true) {
                     snap.getBoolean("target")?.let { requestHeatLampOn(it) }
                     snap.reference.set(mapOf("active" to false))
                 }
@@ -341,9 +354,9 @@ internal class TemperatureViewModel(application: Application) :
             }
         }
 
-        commands.document("sendTemp").addSnapshotListener {snap, e ->
-            if(snap != null) {
-                if(snap.getBoolean("active") == true) {
+        commands.document("sendTemp").addSnapshotListener { snap, e ->
+            if (snap != null) {
+                if (snap.getBoolean("active") == true) {
                     lastSavedTemp = Instant.MIN
                     snap.reference.set(mapOf("active" to false))
                 }
@@ -467,9 +480,13 @@ class Heater {
     fun off() = set(false)
 
     fun set(status: Boolean) {
+        val change = relaySwitch?.value == status
         relaySwitch?.value = !status
         Log.d(TAG, "set called")
-        mutableStatus.postValue(status)
+        if (change) {
+            Log.d(TAG, "heater status changed to $status")
+            mutableStatus.postValue(status)
+        }
     }
 
     fun disconnect() {
@@ -477,3 +494,5 @@ class Heater {
         alwaysOn?.close()
     }
 }
+
+fun Instant.isStale(): Boolean = this.isBefore(Instant.now().minus(15L, ChronoUnit.MINUTES))
