@@ -3,7 +3,6 @@ package com.emerssso.hedgebase
 import android.app.Application
 import android.graphics.Color
 import android.util.Log
-import androidx.core.graphics.toColor
 import androidx.lifecycle.*
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
@@ -109,10 +108,10 @@ internal class TemperatureViewModel(application: Application) :
         when (it) {
             ThermalSafety.BELOW_SAFE -> BLUE
             ThermalSafety.BELOW_COMFORT -> BLUE
-            ThermalSafety.COMFORT -> application.getColor(android.R.color.white).toColor()
+            ThermalSafety.COMFORT -> WHITE
             ThermalSafety.ABOVE_COMFORT -> RED
             ThermalSafety.ABOVE_SAFE -> RED
-            else -> application.getColor(android.R.color.white).toColor()
+            else -> WHITE
         }
     }
 
@@ -222,7 +221,7 @@ internal class TemperatureViewModel(application: Application) :
 
         firestore.document("temperatures/current").get().addOnCompleteListener {
             if (it.isSuccessful) {
-                val lastCurrent = it.result.getDate("time")?.toInstant()
+                val lastCurrent = it.result?.getDate("time")?.toInstant()
                 if (lastCurrent == null || lastCurrent.isStale()) {
                     Log.d(TAG, "firestore current >15 old")
                     forceLogTemp(temp, now)
@@ -398,6 +397,7 @@ private const val KEY_ALERT_TIME_END = "end"
 
 internal val RED = Color.valueOf(1f, 0f, 0f)
 internal val BLUE = Color.valueOf(0f, 0f, 1f)
+internal val WHITE = Color.valueOf(1f, 1f, 1f)
 
 private fun DocumentReference.setAlert(message: String) {
     set(mapOf(
@@ -411,11 +411,11 @@ private fun DocumentReference.setAlert(message: String) {
 private fun DocumentReference.clearAlert() {
     get().addOnCompleteListener {
 
-        if (it.isSuccessful && it.result[KEY_ALERT_ACTIVE] as? Boolean == true) {
+        if (it.isSuccessful && it.result?.get(KEY_ALERT_ACTIVE) as? Boolean == true) {
             Log.d(TAG, "clearing alert")
 
             //Copy cleared alert out of active namespace for posterity; delete active instance
-            it.result.data?.let { data ->
+            it.result?.data?.let { data ->
                 data.putAll(mapOf(
                         KEY_ALERT_ACTIVE to false,
                         KEY_ALERT_TIME_END to Timestamp.now())
