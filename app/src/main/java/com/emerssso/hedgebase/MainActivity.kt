@@ -14,8 +14,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModelProviders
 import androidx.lifecycle.get
-import com.google.android.things.pio.Gpio
-import com.sensirion.libsmartgadget.smartgadget.GadgetManagerFactory
 import kotlinx.android.synthetic.main.activity_main.*
 
 

@@ -7,7 +7,9 @@ import androidx.lifecycle.*
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
 import com.google.firebase.Timestamp
-import com.google.firebase.firestore.*
+import com.google.firebase.firestore.DocumentReference
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.BatteryService
 import com.sensirion.libsmartgadget.smartgadget.GadgetManagerFactory
@@ -60,8 +62,7 @@ internal class TemperatureViewModel(application: Application) :
                             when (it) {
                                 ThermalSafety.BELOW_SAFE -> heater.on()
                                 ThermalSafety.BELOW_COMFORT -> heater.on()
-                                ThermalSafety.COMFORT -> {
-                                } //if comfortable, no change to heater
+                                ThermalSafety.COMFORT -> {} //if comfortable, no change to heater
                                 ThermalSafety.ABOVE_COMFORT -> heater.off()
                                 ThermalSafety.ABOVE_SAFE -> heater.off()
                                 else -> heater.on() //if no data, turn on heater to be safe
@@ -400,11 +401,15 @@ internal val BLUE = Color.valueOf(0f, 0f, 1f)
 internal val WHITE = Color.valueOf(1f, 1f, 1f)
 
 private fun DocumentReference.setAlert(message: String) {
-    set(mapOf(
-            KEY_ALERT_MESSAGE to message,
-            KEY_ALERT_ACTIVE to true,
-            KEY_ALERT_TIME_START to Timestamp.now()
-    ))
+    get().addOnCompleteListener {
+       if(it.isSuccessful && it.result?.exists() != true) {
+           set(mapOf(
+                   KEY_ALERT_MESSAGE to message,
+                   KEY_ALERT_ACTIVE to true,
+                   KEY_ALERT_TIME_START to Timestamp.now()
+           ))
+       }
+    }
 }
 
 //Clears the alert if it is active, else does nothing
