@@ -15,6 +15,13 @@ android {
         versionCode 1
         versionName "0.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        def props = new Properties()
+        props.load(new FileInputStream(new File(project.projectDir, 'credentials.properties')))
+        print(props['email'] + " --- " + props['password'])
+
+        buildConfigField 'String', 'FIREBASE_EMAIL', props['email']
+        buildConfigField 'String', 'FIREBASE_PASSWORD', props['password']
     }
     buildTypes {
         release {

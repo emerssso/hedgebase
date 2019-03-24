@@ -20,7 +20,7 @@ import java.time.temporal.ChronoUnit
 /**
  * Routes the temperature data stream from a BLE temperature sensor to various [LiveData]
  */
-internal class TemperatureViewModel(application: Application) :
+class TemperatureViewModel(application: Application) :
         AndroidViewModel(application), GadgetManagerCallback {
 
     private val heater: Heater = Heater()
@@ -29,13 +29,8 @@ internal class TemperatureViewModel(application: Application) :
 
     private val gadgetManager = GadgetManagerFactory.create(this).apply { initialize(application) }
 
-    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance().apply {
-        firestoreSettings = FirebaseFirestoreSettings.Builder()
-                .setTimestampsInSnapshotsEnabled(true)
-                .build()
-
-        setListeners(this)
-    }
+    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+            .apply { setListeners(this) }
 
     private var lastSavedTemp: Instant = Instant.MIN
 
@@ -400,16 +395,24 @@ internal val RED = Color.valueOf(1f, 0f, 0f)
 internal val BLUE = Color.valueOf(0f, 0f, 1f)
 internal val WHITE = Color.valueOf(1f, 1f, 1f)
 
+/** Sets an alert with [message] if it doesn't already exist **/
 private fun DocumentReference.setAlert(message: String) {
     get().addOnCompleteListener {
        if(it.isSuccessful && it.result?.exists() != true) {
-           set(mapOf(
-                   KEY_ALERT_MESSAGE to message,
-                   KEY_ALERT_ACTIVE to true,
-                   KEY_ALERT_TIME_START to Timestamp.now()
-           ))
+           Log.d(TAG, "alert not set")
+           forceSetAlert(message)
        }
     }
+}
+
+/** Always sets alert [message] **/
+private fun DocumentReference.forceSetAlert(message: String) {
+    Log.d(TAG, "setting alert: $message")
+    set(mapOf(
+            KEY_ALERT_MESSAGE to message,
+            KEY_ALERT_ACTIVE to true,
+            KEY_ALERT_TIME_START to Timestamp.now()
+    ))
 }
 
 //Clears the alert if it is active, else does nothing

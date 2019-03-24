@@ -7,19 +7,23 @@ import android.content.IntentFilter
 import android.graphics.PorterDuff
 import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.util.Log
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import android.widget.ToggleButton
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModelProviders
 import androidx.lifecycle.get
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.android.synthetic.main.activity_main.*
 
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var tempViewModel: TemperatureViewModel
+    private lateinit var auth: FirebaseAuth
 
     private lateinit var text: TextView
     private lateinit var tempToggle: ToggleButton
@@ -52,6 +56,21 @@ class MainActivity : AppCompatActivity() {
         setTempToggleListener()
 
         showWifiStatus()
+
+        auth = FirebaseAuth.getInstance()
+        if(auth.currentUser == null) {
+            auth.signInWithEmailAndPassword(BuildConfig.FIREBASE_EMAIL,
+                    BuildConfig.FIREBASE_PASSWORD).addOnCompleteListener { task ->
+                if(task.isSuccessful) {
+                    Toast.makeText(this, "Authentication complete", Toast.LENGTH_LONG)
+                            .show()
+                } else {
+                    Log.w(TAG, "failed to log in")
+                    Toast.makeText(this, "Authentication failed", Toast.LENGTH_LONG)
+                            .show()
+                }
+            }
+        }
     }
 
     private fun setTempToggleListener() {
@@ -130,3 +149,5 @@ private var ImageView.vectorTint: Int
     set(value) {
         setColorFilter(value, PorterDuff.Mode.SRC_IN)
     }
+
+private const val TAG = "MainActivity"
