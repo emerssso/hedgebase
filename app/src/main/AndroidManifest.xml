@@ -21,7 +21,6 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.AppCompat.NoActionBar">
-        <uses-library android:name="com.google.android.things" />
 
         <activity android:name=".MainActivity">
             <intent-filter>

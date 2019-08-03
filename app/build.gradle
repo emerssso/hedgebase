@@ -33,20 +33,21 @@ android {
     lintOptions {
         warning 'InvalidPackage'
     }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 }
 
 dependencies {
-    implementation 'com.crashlytics.sdk.android:crashlytics:2.9.9'
+    implementation 'com.crashlytics.sdk.android:crashlytics:2.10.1'
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    implementation 'com.google.android.things.contrib:driver-bmx280:1.0'
     implementation 'com.sensirion:libble:2.1.7'
     implementation 'com.sensirion:libsmartgadget:1.1.7'
-    implementation 'com.google.android.things.contrib:driver-ht16k33:1.0'
-    implementation 'com.google.android.things.contrib:driver-pwmspeaker:1.0'
-    implementation 'com.google.android.material:material:1.1.0-alpha04'
-    implementation 'com.google.firebase:firebase-core:16.0.8'
-    implementation 'com.google.firebase:firebase-firestore:18.1.0'
-    implementation 'com.google.firebase:firebase-auth:16.2.0'
+    implementation 'com.google.android.material:material:1.1.0-alpha09'
+    implementation 'com.google.firebase:firebase-core:17.0.1'
+    implementation 'com.google.firebase:firebase-firestore:20.2.0'
+    implementation 'com.google.firebase:firebase-auth:18.1.0'
 
     def lifecycle_version = "2.0.0"
 
@@ -55,8 +56,6 @@ dependencies {
     implementation "androidx.lifecycle:lifecycle-extensions:$lifecycle_version"
     implementation "androidx.lifecycle:lifecycle-common-java8:$lifecycle_version"
     implementation "androidx.lifecycle:lifecycle-reactivestreams-ktx:$lifecycle_version"
-
-    compileOnly 'com.google.android.things:androidthings:1.0'
 }
 
 apply plugin: 'com.google.gms.google-services'

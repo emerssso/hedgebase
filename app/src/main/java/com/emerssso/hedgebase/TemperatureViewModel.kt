@@ -4,12 +4,9 @@ import android.app.Application
 import android.graphics.Color
 import android.util.Log
 import androidx.lifecycle.*
-import com.google.android.things.pio.Gpio
-import com.google.android.things.pio.PeripheralManager
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.BatteryService
 import com.sensirion.libsmartgadget.smartgadget.GadgetManagerFactory
@@ -57,7 +54,8 @@ class TemperatureViewModel(application: Application) :
                             when (it) {
                                 ThermalSafety.BELOW_SAFE -> heater.on()
                                 ThermalSafety.BELOW_COMFORT -> heater.on()
-                                ThermalSafety.COMFORT -> {} //if comfortable, no change to heater
+                                ThermalSafety.COMFORT -> {
+                                } //if comfortable, no change to heater
                                 ThermalSafety.ABOVE_COMFORT -> heater.off()
                                 ThermalSafety.ABOVE_SAFE -> heater.off()
                                 else -> heater.on() //if no data, turn on heater to be safe
@@ -398,10 +396,10 @@ internal val WHITE = Color.valueOf(1f, 1f, 1f)
 /** Sets an alert with [message] if it doesn't already exist **/
 private fun DocumentReference.setAlert(message: String) {
     get().addOnCompleteListener {
-       if(it.isSuccessful && it.result?.exists() != true) {
-           Log.d(TAG, "alert not set")
-           forceSetAlert(message)
-       }
+        if (it.isSuccessful && it.result?.exists() != true) {
+            Log.d(TAG, "alert not set")
+            forceSetAlert(message)
+        }
     }
 }
 
@@ -458,28 +456,6 @@ fun Float.toSafety(): ThermalSafety {
 /** Model class that controls the cage heater, and it's on/off state */
 class Heater {
 
-    private val relaySwitch: Gpio?
-    private val alwaysOn: Gpio?
-
-    init {
-        val peripheralManager = PeripheralManager.getInstance()
-
-        //set translation target GPIO to always on.
-        alwaysOn = peripheralManager.openGpio(GPIO_ALWAYS_ON)?.also {
-            it.setDirection(Gpio.DIRECTION_OUT_INITIALLY_HIGH)
-        }
-
-        //Get reference to relay switch
-        relaySwitch = peripheralManager.openGpio(GPIO_RELAY_SWITCH)
-
-        relaySwitch?.run {
-            setActiveType(Gpio.ACTIVE_HIGH)
-            setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
-        } ?: run {
-            Log.w(TAG, "Unable to find relay switch, lamp control unavailable")
-        }
-    }
-
     private val mutableStatus = MutableLiveData<Boolean>().apply { postValue(true) }
     val status: LiveData<Boolean> = mutableStatus
 
@@ -488,18 +464,11 @@ class Heater {
     fun off() = set(false)
 
     fun set(status: Boolean) {
-        val change = relaySwitch?.value == status
-        relaySwitch?.value = !status
-        Log.d(TAG, "set called")
-        if (change) {
-            Log.d(TAG, "heater status changed to $status")
-            mutableStatus.postValue(status)
-        }
+        Log.d(TAG, "heater status changed to $status")
+        mutableStatus.postValue(status)
     }
 
     fun disconnect() {
-        relaySwitch?.close()
-        alwaysOn?.close()
     }
 }
 
