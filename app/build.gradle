@@ -10,7 +10,7 @@ android {
     compileSdkVersion 28
     defaultConfig {
         applicationId "com.emerssso.hedgebase"
-        minSdkVersion 27
+        minSdkVersion 22
         targetSdkVersion 28
         versionCode 1
         versionName "0.1"
@@ -48,6 +48,7 @@ dependencies {
     implementation 'com.google.firebase:firebase-core:17.0.1'
     implementation 'com.google.firebase:firebase-firestore:20.2.0'
     implementation 'com.google.firebase:firebase-auth:18.1.0'
+    implementation 'com.jakewharton.threetenabp:threetenabp:1.2.1'
 
     def lifecycle_version = "2.0.0"
 

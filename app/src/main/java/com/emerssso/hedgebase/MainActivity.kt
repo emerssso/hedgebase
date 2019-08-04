@@ -17,6 +17,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModelProviders
 import androidx.lifecycle.get
 import com.google.firebase.auth.FirebaseAuth
+import com.jakewharton.threetenabp.AndroidThreeTen
 import kotlinx.android.synthetic.main.activity_main.*
 
 
@@ -38,15 +39,16 @@ class MainActivity : AppCompatActivity() {
     private fun showWifiStatus() {
         wifiState?.run {
             vectorTint = if (checkWifiOnAndConnected()) {
-                getColor(android.R.color.white)
+                0x00ffffff
             } else {
-                RED.toArgb()
+               0x00ff0000
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AndroidThreeTen.init(this)
 
         setContentView(R.layout.activity_main)
         text = findViewById(R.id.textView)
@@ -91,7 +93,7 @@ class MainActivity : AppCompatActivity() {
         setupTempViewModel()
 
         registerReceiver(wifiReceiver,
-                IntentFilter(android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION))
+                IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION))
     }
 
     private fun setupTempViewModel() {
@@ -99,7 +101,7 @@ class MainActivity : AppCompatActivity() {
 
         with(tempViewModel) {
             displayText.observe { text -> textView.text = text }
-            displayTextColor.observe { color -> textView.setTextColor(color.toArgb()) }
+            displayTextColor.observe { color -> textView.setTextColor(color) }
             heaterToggleEnabled.observe { enabled -> toggleButton.enabled = enabled }
             heaterStatus.observe { status ->
                 disableTempToggleListener()
@@ -134,7 +136,7 @@ private var ToggleButton.enabled: Boolean
 
 //Based on https://stackoverflow.com/a/34904367/3390459
 private fun Context.checkWifiOnAndConnected(): Boolean {
-    val wifiManager = getSystemService(Context.WIFI_SERVICE) as WifiManager
+    val wifiManager = this.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
     return if (wifiManager.isWifiEnabled) { // Wi-Fi adapter is ON
         wifiManager.connectionInfo.networkId != -1

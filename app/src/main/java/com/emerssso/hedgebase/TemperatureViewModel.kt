@@ -11,8 +11,10 @@ import com.sensirion.libsmartgadget.*
 import com.sensirion.libsmartgadget.smartgadget.BatteryService
 import com.sensirion.libsmartgadget.smartgadget.GadgetManagerFactory
 import com.sensirion.libsmartgadget.smartgadget.SHTC1TemperatureAndHumidityService
-import java.time.Instant
-import java.time.temporal.ChronoUnit
+import org.threeten.bp.DateTimeUtils
+import org.threeten.bp.Instant
+import org.threeten.bp.temporal.ChronoUnit
+import java.util.*
 
 /**
  * Routes the temperature data stream from a BLE temperature sensor to various [LiveData]
@@ -98,7 +100,7 @@ class TemperatureViewModel(application: Application) :
     }
 
     /** Color of temperature text */
-    val displayTextColor: LiveData<Color> = Transformations.map(thermalSafetyData) {
+    val displayTextColor: LiveData<Int> = Transformations.map(thermalSafetyData) {
         when (it) {
             ThermalSafety.BELOW_SAFE -> BLUE
             ThermalSafety.BELOW_COMFORT -> BLUE
@@ -215,7 +217,7 @@ class TemperatureViewModel(application: Application) :
 
         firestore.document("temperatures/current").get().addOnCompleteListener {
             if (it.isSuccessful) {
-                val lastCurrent = it.result?.getDate("time")?.toInstant()
+                val lastCurrent = it.result?.getDate("time")?.let { d -> DateTimeUtils.toInstant(d) }
                 if (lastCurrent == null || lastCurrent.isStale()) {
                     Log.d(TAG, "firestore current >15 old")
                     forceLogTemp(temp, now)
@@ -389,9 +391,9 @@ private const val KEY_ALERT_ACTIVE = "active"
 private const val KEY_ALERT_TIME_START = "start"
 private const val KEY_ALERT_TIME_END = "end"
 
-internal val RED = Color.valueOf(1f, 0f, 0f)
-internal val BLUE = Color.valueOf(0f, 0f, 1f)
-internal val WHITE = Color.valueOf(1f, 1f, 1f)
+internal const val RED = 0x00FF0000
+internal const val BLUE = 0x000000FF
+internal const val WHITE = 0x00FFFFFF
 
 /** Sets an alert with [message] if it doesn't already exist **/
 private fun DocumentReference.setAlert(message: String) {
